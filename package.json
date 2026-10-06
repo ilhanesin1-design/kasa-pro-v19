@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.0",
@@ -14,9 +17,11 @@
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-router-dom": "^7.9.1",
-    "recharts": "^3.2.1"
+    "recharts": "^3.2.1",
+    "@tauri-apps/api": "^2.8.0"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.8.4",
     "@types/react": "^19.1.13",
     "@types/react-dom": "^19.1.9",
     "@vitejs/plugin-react": "^5.0.4",

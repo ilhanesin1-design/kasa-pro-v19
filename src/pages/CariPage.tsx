@@ -4,7 +4,7 @@ import { useOutletContext } from 'react-router-dom';
 import type { AppOutletContext } from '../layouts/AppLayout';
 import { createCari, deleteCari, loadCari, loadModuleBranches, money, updateCari, type CariRow, type ModuleBranch } from '../lib/app';
 
-const pick=(r:Record<string, unknown>, keys:string[], fallback='')=>{for(const k of keys)if(r[k]!==undefined&&r[k]!==null&&String(r[k])!=='')return String(r[k]);return fallback};
+const pick=(r:CariRow, keys:string[], fallback='')=>{for(const k of keys)if(r[k]!==undefined&&r[k]!==null&&String(r[k])!=='')return String(r[k]);return fallback};
 const amount=(r:CariRow)=>Number(r.miktar??0)||0;
 export function CariPage(){
  const {user}=useOutletContext<AppOutletContext>();

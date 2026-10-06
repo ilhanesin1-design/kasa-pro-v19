@@ -93,22 +93,21 @@ export function ReportsPage(){
  const invoiceRemaining=data?.invoices.reduce((s,r)=>s+Number(r.kalan??Math.max(0,Number(r.miktar??0)-Number(r.odenen??0))),0)||0;
  const cariBalance=data?.cari.reduce((s,r)=>s+Number(r.miktar??0),0)||0;
  const scopeName=user.companyId ? (companies.find(c=>c.id===user.companyId)?.name||'İşletme') : (user.role && isSuperAdmin(user.role, user.email) ? 'Tüm İşletmeler' : (companies[0]?.name||'Yetkili İşletme'));
- const exportExcel=(report?:ReportData)=>{
-   const target=report ?? data;
-   if(!target)return;
-   const rows=target.transactions;
+ const exportExcel=(report:ReportData=data)=>{
+   if(!report)return;
+   const rows=report.transactions;
    const incomeX=rows.filter(r=>r.type==='income').reduce((s,r)=>s+r.amount,0);
    const expenseX=rows.filter(r=>r.type==='expense').reduce((s,r)=>s+r.amount,0);
-   const invoiceTotalX=target.invoices.reduce((s,r)=>s+Number(r.miktar??0),0);
-   const invoicePaidX=target.invoices.reduce((s,r)=>s+Number(r.odenen??0),0);
-   const invoiceRemainingX=target.invoices.reduce((s,r)=>s+Number(r.kalan??Math.max(0,Number(r.miktar??0)-Number(r.odenen??0))),0);
-   const cariBalanceX=target.cari.reduce((s,r)=>s+Number(r.miktar??0),0);
+   const invoiceTotalX=report.invoices.reduce((s,r)=>s+Number(r.miktar??0),0);
+   const invoicePaidX=report.invoices.reduce((s,r)=>s+Number(r.odenen??0),0);
+   const invoiceRemainingX=report.invoices.reduce((s,r)=>s+Number(r.kalan??Math.max(0,Number(r.miktar??0)-Number(r.odenen??0))),0);
+   const cariBalanceX=report.cari.reduce((s,r)=>s+Number(r.miktar??0),0);
    downloadXlsx(`KASA-PRO-V19-${from}-${to}.xlsx`,[
     {name:'Yönetici Özeti',widths:[34,24,24,30],mergeFirstRow:true,rows:[
       ['KASA PRO V19 · BY İLHAN EŞİN'],['KURUMSAL FİNANS RAPORU'],['Kapsam',scopeName],['Rapor dönemi',`${from} → ${to}`],['Oluşturulma',new Date().toLocaleString('tr-TR')],
       [],['FİNANS ÖZETİ'],['Toplam Gelir',incomeX],['Toplam Gider',expenseX],['Net Durum',incomeX-expenseX],['Finans hareketi',rows.length],
-      [],['FATURA ÖZETİ'],['Toplam fatura',target.invoices.length],['Fatura tutarı',invoiceTotalX],['Ödenen',invoicePaidX],['Kalan',invoiceRemainingX],
-      [],['CARİ ÖZETİ'],['Cari hareket',target.cari.length],['Cari net',cariBalanceX]
+      [],['FATURA ÖZETİ'],['Toplam fatura',report.invoices.length],['Fatura tutarı',invoiceTotalX],['Ödenen',invoicePaidX],['Kalan',invoiceRemainingX],
+      [],['CARİ ÖZETİ'],['Cari hareket',report.cari.length],['Cari net',cariBalanceX]
     ]},
     {name:'Finans Hareketleri',widths:[22,14,30,45,28,18],headerRow:0,freezeRows:1,autoFilter:true,rows:[
       ['Tarih','Tür','Şube','İşlem','İşlemi Yapan','Tutar'],
@@ -116,11 +115,11 @@ export function ReportsPage(){
     ]},
     {name:'Faturalar',widths:[28,30,22,18,18,18,24],headerRow:0,freezeRows:1,autoFilter:true,rows:[
       ['Fatura / Seri','Firma','Şube','Tarih','Toplam','Ödenen','Kalan'],
-      ...target.invoices.map(r=>[String(r.seri_no??r.fatura_no??r.id),String(r.firma??r.fatura_adi??'—'),String(r.sube??'—'),String(r.tarih??'—'),Number(r.miktar??0),Number(r.odenen??0),Number(r.kalan??0)])
+      ...report.invoices.map(r=>[String(r.seri_no??r.fatura_no??r.id),String(r.firma??r.fatura_adi??'—'),String(r.sube??'—'),String(r.tarih??'—'),Number(r.miktar??0),Number(r.odenen??0),Number(r.kalan??0)])
     ]},
     {name:'Cari',widths:[22,30,24,18,18],headerRow:0,freezeRows:1,autoFilter:true,rows:[
       ['Tarih','Firma','Şube','Tür','Tutar'],
-      ...target.cari.map(r=>[String(r.tarih??'—'),String(r.firma??'—'),String(r.sube??'—'),String(r.islem_turu??'—'),Number(r.miktar??0)])
+      ...report.cari.map(r=>[String(r.tarih??'—'),String(r.firma??'—'),String(r.sube??'—'),String(r.islem_turu??'—'),Number(r.miktar??0)])
     ]}
    ]);
  };
@@ -135,11 +134,11 @@ export function ReportsPage(){
    finally{setLoading(false);}
  };
  return <div className="report-page">
-  <Header eyebrow="YÖNETİM · RAPOR" title="Rapor Merkezi" desc="Seçtiğiniz kapsam ve tarih aralığındaki gerçek Supabase verilerinden kurumsal rapor oluşturun." action={<div className="title-actions"><button className="primary" onClick={()=>exportExcel()} disabled={!data||loading}><FileBarChart size={17}/> Kurumsal Excel indir</button><button className="secondary" onClick={()=>window.print()} disabled={!data||loading}><FileBarChart size={17}/> PDF / Yazdır</button></div>}/>
+  <Header eyebrow="YÖNETİM · RAPOR" title="Rapor Merkezi" desc="Seçtiğiniz kapsam ve tarih aralığındaki gerçek Supabase verilerinden kurumsal rapor oluşturun." action={<div className="title-actions"><button className="primary" onClick={exportExcel} disabled={!data||loading}><FileBarChart size={17}/> Kurumsal Excel indir</button><button className="secondary" onClick={()=>window.print()} disabled={!data||loading}><FileBarChart size={17}/> PDF / Yazdır</button></div>}/>
   <section className="panel report-commandbar"><div className="report-field"><span>BAŞLANGIÇ</span><input type="date" value={from} onChange={e=>setFrom(e.target.value)}/></div><div className="report-field"><span>BİTİŞ</span><input type="date" value={to} onChange={e=>setTo(e.target.value)}/></div><div className="report-field wide"><span>ŞUBE</span><select value={branch} onChange={e=>setBranch(e.target.value)}><option value="">Tüm yetkili şubeler</option>{branches.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select></div><button className="primary report-run" onClick={run} disabled={loading}><RefreshCw size={17}/>{loading?'Rapor hazırlanıyor...':'Raporu oluştur'}</button></section>
   {error&&<div className="error-panel"><strong>Rapor oluşturulamadı</strong><p>{error}</p></div>}
   {generatedAt&&data&&<div className="notice success"><CheckCircle2 size={18}/><span>Rapor hazır · {generatedAt} · {data.transactions.length} finans hareketi işlendi.</span></div>}
   <section className="report-kpis corporate-report-kpis"><div><span>Toplam Gelir</span><strong>{money(income)}</strong></div><div><span>Toplam Gider</span><strong>{money(expense)}</strong></div><div><span>Net Durum</span><strong>{money(income-expense)}</strong></div><div><span>Fatura Tutarı</span><strong>{money(invoiceTotal)}</strong></div><div><span>Fatura Kalan</span><strong>{money(invoiceRemaining)}</strong></div><div><span>Cari Net</span><strong>{money(cariBalance)}</strong></div></section>
-  {!data&&!loading?<div className="empty-module"><FileBarChart/><h3>Rapor verisi bulunamadı</h3><p>Seçilen tarih ve kapsam için kayıt bulunmuyor.</p></div>:<div className="report-grid report-grid-corporate"><section className="panel"><div className="panel-head"><div><h2>Finans hareketleri</h2><p>Gerçek veriler · kullanıcı adı dahil</p></div><span className="report-count">{data?.transactions.length||0} kayıt</span></div><div className="table-wrap report-table"><table><thead><tr><th>Tarih</th><th>Tür</th><th>Şube</th><th>İşlem</th><th>İşlemi Yapan</th><th className="right">Tutar</th></tr></thead><tbody>{data?.transactions.map(r=><tr key={r.id}><td>{r.date}</td><td><span className={`report-type ${r.type}`}>{r.type==='income'?'Gelir':'Gider'}</span></td><td>{r.branch}</td><td>{r.title}</td><td>{r.userName||'—'}</td><td className={`right amount ${r.type}`}>{money(r.amount)}</td></tr>)}</tbody></table></div></section><aside className="panel report-side"><div className="panel-head"><div><h2>Rapor Özeti</h2><p>Seçili dönem</p></div></div><div className="report-summary-card"><span>Finans hareketi</span><strong>{data?.transactions.length||0}</strong></div><div className="report-summary-card"><span>Fatura</span><strong>{data?.invoices.length||0}</strong><small>{money(invoiceTotal)}</small></div><div className="report-summary-card"><span>Cari hareket</span><strong>{data?.cari.length||0}</strong><small>{money(cariBalance)}</small></div><div className="report-summary-card"><span>Tarih aralığı</span><strong>{from}</strong><small>→ {to}</small></div><button className="primary full report-export-big" onClick={()=>exportExcel()} disabled={!data||loading}><FileBarChart size={18}/> Excel raporunu indir</button></aside></div>}
+  {!data&&!loading?<div className="empty-module"><FileBarChart/><h3>Rapor verisi bulunamadı</h3><p>Seçilen tarih ve kapsam için kayıt bulunmuyor.</p></div>:<div className="report-grid report-grid-corporate"><section className="panel"><div className="panel-head"><div><h2>Finans hareketleri</h2><p>Gerçek veriler · kullanıcı adı dahil</p></div><span className="report-count">{data?.transactions.length||0} kayıt</span></div><div className="table-wrap report-table"><table><thead><tr><th>Tarih</th><th>Tür</th><th>Şube</th><th>İşlem</th><th>İşlemi Yapan</th><th className="right">Tutar</th></tr></thead><tbody>{data?.transactions.map(r=><tr key={r.id}><td>{r.date}</td><td><span className={`report-type ${r.type}`}>{r.type==='income'?'Gelir':'Gider'}</span></td><td>{r.branch}</td><td>{r.title}</td><td>{r.userName||'—'}</td><td className={`right amount ${r.type}`}>{money(r.amount)}</td></tr>)}</tbody></table></div></section><aside className="panel report-side"><div className="panel-head"><div><h2>Rapor Özeti</h2><p>Seçili dönem</p></div></div><div className="report-summary-card"><span>Finans hareketi</span><strong>{data?.transactions.length||0}</strong></div><div className="report-summary-card"><span>Fatura</span><strong>{data?.invoices.length||0}</strong><small>{money(invoiceTotal)}</small></div><div className="report-summary-card"><span>Cari hareket</span><strong>{data?.cari.length||0}</strong><small>{money(cariBalance)}</small></div><div className="report-summary-card"><span>Tarih aralığı</span><strong>{from}</strong><small>→ {to}</small></div><button className="primary full report-export-big" onClick={exportExcel} disabled={!data||loading}><FileBarChart size={18}/> Excel raporunu indir</button></aside></div>}
  </div>
 }

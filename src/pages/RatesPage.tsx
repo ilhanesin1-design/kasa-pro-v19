@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Landmark, RefreshCw, Save, X } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
 import { useOutletContext } from 'react-router-dom';
 import type { AppOutletContext } from '../layouts/AppLayout';
 import { loadRatesFromTransactions } from '../lib/app';
@@ -44,9 +45,7 @@ export function RatesPage(){
     try {
       let xml='';
       try {
-        const response=await fetch('https://www.tcmb.gov.tr/kurlar/today.xml',{cache:'no-store'});
-        if(!response.ok) throw new Error(`TCMB yanıtı: ${response.status}`);
-        xml=await response.text();
+        xml=await invoke<string>('fetch_tcmb_xml');
       } catch {
         const response=await fetch('https://www.tcmb.gov.tr/kurlar/today.xml',{cache:'no-store'});
         if(!response.ok) throw new Error(`TCMB yanıtı: ${response.status}`);
@@ -83,7 +82,7 @@ export function RatesPage(){
       <div>
         <div className="eyebrow">FİNANS · KURLAR</div>
         <h1>Kur Merkezi</h1>
-        <p>TCMB kurlarını web üzerinden alın ve işlem kayıtlarıyla ilişkilendirin.</p>
+        <p>TCMB kurlarını güvenli masaüstü bağlantısıyla alın ve işlem kayıtlarıyla ilişkilendirin.</p>
       </div>
       <div className="title-actions">
         <button className="secondary" disabled={loading} onClick={updateDb}><RefreshCw size={16}/> Supabase'den al</button>

@@ -1,0 +1,19 @@
+[package]
+name = "kasa-pro-v19"
+version = "19.0.0"
+description = "KASA PRO V19"
+authors = ["KASA PRO"]
+edition = "2021"
+
+[lib]
+name = "kasa_pro_v19_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
