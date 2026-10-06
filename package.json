@@ -6,22 +6,18 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview",
-    "tauri": "tauri",
-    "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "preview": "vite preview"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.0",
+    "@tauri-apps/api": "^2.0.0",
     "lucide-react": "^0.468.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-router-dom": "^7.9.1",
-    "recharts": "^3.2.1",
-    "@tauri-apps/api": "^2.8.0"
+    "recharts": "^3.2.1"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.8.4",
     "@types/react": "^19.1.13",
     "@types/react-dom": "^19.1.9",
     "@vitejs/plugin-react": "^5.0.4",
@@ -29,3 +25,16 @@
     "vite": "^7.1.7"
   }
 }
+```[cite: 2]
+
+---
+
+### 2. `InvoicePage.tsx` Düzeltmesi
+Boş nesne `{}` ataması yerine, `id` alanını içeren zorunlu alanları tanımlayın:
+
+```typescript
+// Hatalı olan kısmı bununla değiştirin:
+const newRow: InvoiceRow = {
+  id: crypto.randomUUID(), // Benzersiz bir kimlik (id) zorunludur
+  // Diğer InvoiceRow alanlarınız...
+};
