@@ -1,1 +1,35 @@
-<!doctype html><html lang="tr"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><meta name="theme-color" content="#0b1220"/><meta name="mobile-web-app-capable" content="yes"/><meta name="apple-mobile-web-app-capable" content="yes"/><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/><meta name="apple-mobile-web-app-title" content="KASA PRO"/><link rel="manifest" href="/manifest.webmanifest"/><title>KASA PRO V19 · BY İLHAN EŞİN</title></head><body><div id="root"></div><script type="module" src="/src/main.tsx"></script><script>if("serviceWorker" in navigator){window.addEventListener("load",()=>navigator.serviceWorker.register("/sw.js").catch(()=>{}));}</script></body></html>
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+  <meta name="theme-color" content="#0b1220" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="KASA PRO" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <title>KASA PRO V19 · BY İLHAN EŞİN</title>
+  <style>html,body{margin:0;min-height:100%;background:#f5f7fb}#root{min-height:100vh}.boot-fallback{min-height:100vh;display:grid;place-items:center;font:600 16px system-ui,-apple-system,"Segoe UI",sans-serif;color:#334155}</style>
+</head>
+<body>
+  <div id="root"><div class="boot-fallback">KASA PRO başlatılıyor...</div></div>
+  <script>
+    window.__KASA_PRO_BOOTED__ = false;
+    window.addEventListener('error', function(e){
+      if(!window.__KASA_PRO_BOOTED__){
+        var root=document.getElementById('root');
+        if(root) root.innerHTML='<div style="padding:32px;font:16px system-ui;color:#b91c1c"><h2>KASA PRO başlatılamadı</h2><p>'+String(e.message||'JavaScript yükleme hatası')+'</p></div>';
+      }
+    });
+    window.addEventListener('unhandledrejection', function(e){
+      if(!window.__KASA_PRO_BOOTED__){
+        var root=document.getElementById('root');
+        if(root) root.innerHTML='<div style="padding:32px;font:16px system-ui;color:#b91c1c"><h2>KASA PRO başlatılamadı</h2><p>'+String(e.reason?.message||e.reason||'Beklenmeyen hata')+'</p></div>';
+      }
+    });
+    if('serviceWorker' in navigator){ navigator.serviceWorker.getRegistrations().then(function(rs){ rs.forEach(function(r){r.unregister();}); }).catch(function(){}); }
+  </script>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+</html>
