@@ -14,7 +14,7 @@ async function withTimeout<T>(promiseLike: PromiseLike<T>, label: string, timeou
   }
 }
 
-const db = <T,>(promiseLike: PromiseLike<T>, label: string, timeoutMs = DB_TIMEOUT_MS) => withTimeout(promiseLike, label, timeoutMs);
+const db = <T,>(promiseLike: PromiseLike<T>, label: string, timeoutMs = DB_TIMEOUT_MS): Promise<T> => withTimeout<T>(promiseLike, label, timeoutMs);
 type AnySupabase = NonNullable<typeof supabase>;
 type AnyRow = Record<string, any>;
 
@@ -132,7 +132,7 @@ export async function getUserContext(): Promise<UserContext> {
     sb.rpc('v19_is_super_admin'),
     sb.rpc('is_super_admin'),
   ]);
-  const detectedSuperAdmin = isSuperAdmin(profileRole, auth.user.email) || isSuperAdmin(metadataRole, auth.user.email) || roleValues.some(isSuperAdmin) || superRpc.data === true || legacySuperRpc.data === true;
+  const detectedSuperAdmin = isSuperAdmin(profileRole, auth.user.email) || isSuperAdmin(metadataRole, auth.user.email) || roleValues.some(r => isSuperAdmin(r)) || superRpc.data === true || legacySuperRpc.data === true;
   const role = detectedSuperAdmin || String(auth.user.email ?? '').trim().toLowerCase() === 'ilhanesin1@gmail.com' ? 'SUPER_ADMIN' : (profileRole || rows.find(r => isAdminRole(text(r,['role','rol','user_role','kullanici_rolu','kullanıcı_rolü'])))?.role || rows[0]?.role || metadataRole || null);
   const superAdmin = isSuperAdmin(String(role ?? ''), auth.user.email);
   const companyId = superAdmin ? null : (text(profileRecord,['company_id','şirket_id','sirket_id','işletme_id','isletme_id'],'') || text(rows[0] ?? {},['company_id','şirket_id','sirket_id','işletme_id','isletme_id'],'') || text(metadata,['company_id'],'' ) || null);
@@ -205,7 +205,7 @@ export async function loadDashboard(user:UserContext):Promise<DashboardData>{
   return {incomeToday,expenseToday,netToday:incomeToday-expenseToday,totalNet,invoiceTotal,activeBranches:branches.length,chart:[...map.entries()].map(([d,v])=>({d:d.slice(8,10),g:Math.round(v.g),c:Math.round(v.c)})),branches:branches.map(b=>({id:b.id,name:b.name,city:b.city,balance:balances.get(b.id)||0})),transactions:recent,user};
 }
 
-export async function loadModuleTransactions(user:UserContext){const tx=await normalizedTransactions(user,7000);const branches=await loadModuleBranches(user);const map=new Map(branches.map(b=>[b.id,b.name]));const names=await resolveUserNames(tx.map(r=>r.created_by||'')); return tx.sort((a,b)=>String(b.islem_zamani||b.tarih).localeCompare(String(a.islem_zamani||a.tarih))).map(r=>({id:r.id,title:r.aciklama||(isIncome(r.tur)?'Gelir işlemi':'Gider işlemi'),branch:r.sube||map.get(r.branch_id)||'Şube',category:r.tur,date:formatDate(r.islem_zamani||r.tarih),dateKey:localDateKey(r.tarih||r.islem_zamani),amount:r.miktar,type:isIncome(r.tur)?'income':'expense',userName:names.get(String(r.created_by||''))||r.kullanici||'—',branchId:r.branch_id}));}
+export async function loadModuleTransactions(user:UserContext):Promise<ModuleTransaction[]>{const tx=await normalizedTransactions(user,7000);const branches=await loadModuleBranches(user);const map=new Map(branches.map(b=>[b.id,b.name]));const names=await resolveUserNames(tx.map(r=>r.created_by||'')); return tx.sort((a,b)=>String(b.islem_zamani||b.tarih).localeCompare(String(a.islem_zamani||a.tarih))).map(r=>({id:r.id,title:r.aciklama||(isIncome(r.tur)?'Gelir işlemi':'Gider işlemi'),branch:r.sube||map.get(r.branch_id)||'Şube',category:r.tur,date:formatDate(r.islem_zamani||r.tarih),dateKey:localDateKey(r.tarih||r.islem_zamani),amount:r.miktar,type:(isIncome(r.tur)?'income':'expense') as 'income'|'expense',userName:names.get(String(r.created_by||''))||r.kullanici||'—',branchId:r.branch_id}));}
 
 export async function loadModuleBranches(user:UserContext):Promise<ModuleBranch[]>{const sb=requireSupabase();let rows=await fetchRows(sb,TABLES.branches,'Şube listesi',3000);rows=filterRowsByUserBranch(rows,user);if(user.companyId)rows=rows.filter(r=>String(pick(r,['company_id','şirket_id','sirket_id','işletme_id','isletme_id'],''))===user.companyId);const tx=await normalizedTransactions(user,7000);const balances=new Map<string,number>();for(const r of tx)balances.set(r.branch_id,(balances.get(r.branch_id)||0)+(isIncome(r.tur)?r.miktar:-r.miktar));return rows.filter(r=>bool(r,['is_active','aktif'],true)).map(r=>({id:text(r,['id']),name:text(r,['name','şube_adi','sube_adi','ad','isim','branch_name'],'Şube'),city:text(r,['city','şehir','sehir']),is_active:bool(r,['is_active','aktif'],true),balance:balances.get(text(r,['id']))||0}));}
 

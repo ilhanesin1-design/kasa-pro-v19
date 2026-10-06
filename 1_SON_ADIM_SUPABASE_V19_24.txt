@@ -1,0 +1,9 @@
+KASA PRO V19.24
+
+Supabase SQL Editor'da SADECE şu dosyayı çalıştırın:
+
+supabase/sql/V19_24_YETKI_FINAL_FIX.sql
+
+Sonra uygulamadan çıkış yapıp tekrar giriş yapın ve Ctrl+F5 yapın.
+
+Bu dosya SUPER_ADMIN yetkisini ve Şube Admininin kendi şubesindeki tam finans işlem yetkisini düzeltir.

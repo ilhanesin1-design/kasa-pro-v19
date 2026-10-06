@@ -4,13 +4,13 @@ import { useOutletContext } from 'react-router-dom';
 import type { AppOutletContext } from '../layouts/AppLayout';
 import { createInvoice, createInvoicePayment, deleteInvoice, loadInvoices, loadModuleBranches, money, updateInvoice, type InvoiceRow, type ModuleBranch } from '../lib/app';
 
-const pick=(r:InvoiceRow, keys:string[], fallback='')=>{for(const k of keys)if(r[k]!==undefined&&r[k]!==null&&String(r[k])!=='')return String(r[k]);return fallback};
-const no=(r:InvoiceRow)=>pick(r,['seri_no','fatura_no','invoice_number','invoice_no'],'—');
-const firm=(r:InvoiceRow)=>pick(r,['firma','company_name','fatura_adi','invoice_name','name','baslik','title'],'Fatura');
-const date=(r:InvoiceRow)=>pick(r,['tarih','fatura_tarihi','invoice_date','date','created_at'],'');
-const total=(r:InvoiceRow)=>Number(pick(r,['miktar','genel_toplam','grand_total','total','tutar','amount'],'0'))||0;
-const branch=(r:InvoiceRow)=>pick(r,['sube','branch_name'],'Şube');
-const remaining=(r:InvoiceRow)=>Number(r.kalan??Math.max(0,total(r)-Number(r.odenen??0)))||0;
+const pick=(r:Record<string, unknown>, keys:string[], fallback='')=>{for(const k of keys)if(r[k]!==undefined&&r[k]!==null&&String(r[k])!=='')return String(r[k]);return fallback};
+const no=(r:Record<string, unknown>)=>pick(r,['seri_no','fatura_no','invoice_number','invoice_no'],'—');
+const firm=(r:Record<string, unknown>)=>pick(r,['firma','company_name','fatura_adi','invoice_name','name','baslik','title'],'Fatura');
+const date=(r:Record<string, unknown>)=>pick(r,['tarih','fatura_tarihi','invoice_date','date','created_at'],'');
+const total=(r:Record<string, unknown>)=>Number(pick(r,['miktar','genel_toplam','grand_total','total','tutar','amount'],'0'))||0;
+const branch=(r:Record<string, unknown>)=>pick(r,['sube','branch_name'],'Şube');
+const remaining=(r:Record<string, unknown>)=>Number(r.kalan??Math.max(0,total(r)-Number(r.odenen??0)))||0;
 const keyNorm=(v:string)=>v.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('tr-TR').trim();
 type FirmGroup={key:string;name:string;branch:string;invoices:InvoiceRow[];total:number;paid:number;remaining:number};
 function groupByFirm(rows:InvoiceRow[]):FirmGroup[]{const map=new Map<string,FirmGroup>();for(const r of rows){const name=firm(r),br=branch(r),key=keyNorm(name);const g=map.get(key)??{key,name,branch:br,invoices:[],total:0,paid:0,remaining:0};g.branch=g.branch.includes(br)?g.branch:`${g.branch}${g.branch?', ':''}${br}`;g.invoices.push(r);g.total+=total(r);g.paid+=Number(r.odenen??0)||0;g.remaining+=remaining(r);map.set(key,g)}return [...map.values()].sort((a,b)=>a.name.localeCompare(b.name,'tr'));}
