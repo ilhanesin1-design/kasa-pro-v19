@@ -1,0 +1,11 @@
+{
+  "name": "KASA PRO V19",
+  "short_name": "KASA PRO",
+  "description": "KASA PRO V19 işletme ve finans yönetimi",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f7fb",
+  "theme_color": "#0b1220",
+  "lang": "tr",
+  "icons": []
+}

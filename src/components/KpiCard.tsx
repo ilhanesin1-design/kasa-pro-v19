@@ -1,0 +1,1 @@
+import type {ReactNode} from 'react'; export function KpiCard({label,value,sub,icon,tone}:{label:string,value:string,sub:string,icon:ReactNode,tone:string}){return <div className="kpi"><div className={`kpi-icon ${tone}`}>{icon}</div><div className="kpi-copy"><span>{label}</span><strong>{value}</strong><small>{sub}</small></div></div>}
