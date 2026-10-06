@@ -210,3 +210,60 @@ input,select,textarea,button{font-family:inherit}
   .report-page th{background:#eef3f9!important}
   @page{size:A4 landscape;margin:10mm}
 }
+
+/* KASA PRO V19 - Mobile Web / PWA polish */
+@media (max-width: 760px){
+  html,body,#root{width:100%;min-width:320px;overflow-x:hidden}
+  .app-shell{min-height:100dvh}
+  .main{width:100%;min-width:0}
+  .topbar{height:64px;padding:0 10px;gap:8px}
+  .mobile-menu{width:40px;height:40px;display:grid;place-items:center;flex:0 0 40px;border:1px solid #e2e7ef;background:#fff;border-radius:10px;color:#44536a}
+  .search{height:40px;min-width:0;max-width:none;padding:0 10px;gap:7px}
+  .search input{font-size:13px}
+  .top-actions{gap:5px;min-width:0}
+  .top-user{display:none!important}
+  .branch-switch{min-width:0!important;width:42px!important;height:40px!important;padding:4px!important;justify-content:center}
+  .branch-switch span:nth-child(2),.branch-switch>svg{display:none!important}
+  .branch-avatar{width:30px;height:30px}
+  .notification-wrap{display:block}
+  .icon-btn{width:40px;height:40px}
+  .content{padding:16px 12px 30px}
+  .page-title{display:block;margin-bottom:16px}
+  .page-title h1{font-size:24px;line-height:1.15}
+  .page-title p{font-size:13px;line-height:1.45}
+  .title-actions{margin-top:12px;display:grid;grid-template-columns:1fr;gap:8px}
+  .title-actions>*{width:100%}
+  .kpi-grid,.module-summary,.dashboard-kpis,.corporate-report-kpis{grid-template-columns:1fr 1fr!important;gap:9px}
+  .kpi{padding:12px;gap:9px}
+  .kpi-copy strong,.dashboard-kpi .kpi-copy strong{font-size:18px}
+  .kpi-copy span{font-size:10px}
+  .dashboard-grid,.bottom-grid,.dashboard-main-grid,.dashboard-bottom-grid,.report-grid-corporate,.report-grid{grid-template-columns:1fr!important}
+  .panel-head{padding:14px}
+  .panel-head h2{font-size:14px}
+  .table-wrap{margin:0 -1px;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .table-wrap table{min-width:650px}
+  .module-tools,.report-filters,.dashboard-filters{display:grid;grid-template-columns:1fr;gap:8px;align-items:stretch}
+  .module-tools>*,.report-filters>*{width:100%!important;min-width:0!important}
+  .quick-grid,.quick-actions{grid-template-columns:1fr 1fr!important}
+  .quick-grid button,.quick-actions button{min-height:72px}
+  .modal-backdrop{padding:10px!important;align-items:flex-end!important}
+  .modal-card{width:100%!important;max-width:none!important;max-height:92dvh!important;border-radius:16px 16px 10px 10px!important}
+  .modal-head{padding:14px!important}
+  .settings-grid,.help-grid,.entity-grid-large,.user-grid,.branch-grid.entity-grid-large{grid-template-columns:1fr!important}
+  .settings-form{grid-template-columns:1fr!important}
+  .settings-form label:nth-last-child(2){grid-column:auto!important}
+  .scope-popover,.notification-popover{position:fixed!important;left:10px!important;right:10px!important;top:70px!important;width:auto!important;max-height:78dvh!important}
+  .scope-option{padding:13px 12px}
+  .notification-item{padding:12px}
+  .folder-row{flex-direction:column;align-items:flex-start!important;gap:10px!important}
+  .folder-total{align-items:flex-start!important}
+  .report-commandbar{grid-template-columns:1fr!important;padding:12px!important}
+  .report-commandbar .wide,.report-run{grid-column:auto!important}
+  .report-table{overflow-x:auto}
+}
+@media (max-width:420px){
+  .kpi-grid,.module-summary,.dashboard-kpis,.corporate-report-kpis{grid-template-columns:1fr!important}
+  .topbar{padding:0 7px}
+  .content{padding-left:10px;padding-right:10px}
+  .search input{font-size:12px}
+}

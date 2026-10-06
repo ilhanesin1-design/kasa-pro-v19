@@ -1,86 +1,45 @@
-function InvoiceModal({
-  row,
-  branches,
-  user,
-  onClose,
-  onSaved
-}: {
-  row: InvoiceRow | null;
-  branches: ModuleBranch[];
-  user: AppOutletContext['user'];
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const safeRow = row ?? ({ id: '' } as InvoiceRow);
-  
-  const [saving, setSaving] = useState(false);
-  const [branchId, setBranchId] = useState(pick(safeRow, ['branch_id'], user.branchIds[0] || branches[0]?.id || ''));
-  const [firma, setFirma] = useState(pick(safeRow, ['firma', 'fatura_adi'], ''));
-  const [serial, setSerial] = useState(pick(safeRow, ['seri_no', 'fatura_no'], ''));
-  const [content, setContent] = useState(pick(safeRow, ['icerik'], ''));
-  const [amount, setAmount] = useState(String(total(safeRow)));
-  const [paid, setPaid] = useState(String(Number(row?.odenen ?? 0)));
-  const [dateValue, setDateValue] = useState(pick(safeRow, ['tarih'], new Date().toISOString().slice(0, 10)));
-  const [due, setDue] = useState(pick(safeRow, ['vade_tarihi'], ''));
-  const [note, setNote] = useState(pick(safeRow, ['fatura_notu'], ''));
+import { useEffect, useMemo, useState } from 'react';
+import { CreditCard, Edit3, FileText, FolderOpen, Plus, Printer, RefreshCw, Search, Trash2, Wallet, X, CheckCircle2 } from 'lucide-react';
+import { useOutletContext } from 'react-router-dom';
+import type { AppOutletContext } from '../layouts/AppLayout';
+import { createInvoice, createInvoicePayment, deleteInvoice, loadInvoices, loadModuleBranches, money, updateInvoice, type InvoiceRow, type ModuleBranch } from '../lib/app';
 
-  return (
-    <div className="modal-backdrop">
-      <div className="modal-card wide-modal">
-        <div className="modal-head">
-          <div>
-            <div className="eyebrow">FATURA</div>
-            <h2>{row ? 'Faturayı düzenle' : 'Yeni fatura'}</h2>
-          </div>
-          <button className="icon-btn" onClick={onClose}><X /></button>
-        </div>
-        <div className="form-grid">
-          <label>Şube
-            <select value={branchId} onChange={e => setBranchId(e.target.value)}>
-              {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </select>
-          </label>
-          <label>Firma<input value={firma} onChange={e => setFirma(e.target.value)} /></label>
-          <label>Fatura / seri no<input value={serial} onChange={e => setSerial(e.target.value)} /></label>
-          <label>Toplam tutar<input type="number" min="0" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} /></label>
-          <label>İlk ödeme<input type="number" min="0" step="0.01" value={paid} onChange={e => setPaid(e.target.value)} /></label>
-          <label>Tarih<input type="date" value={dateValue} onChange={e => setDateValue(e.target.value)} /></label>
-          <label>Vade tarihi<input type="date" value={due} onChange={e => setDue(e.target.value)} /></label>
-          <label>İçerik<input value={content} onChange={e => setContent(e.target.value)} /></label>
-          <label>Not<textarea value={note} onChange={e => setNote(e.target.value)} /></label>
-        </div>
-        <div className="modal-actions">
-          <button className="secondary" onClick={onClose}>Vazgeç</button>
-          <button className="primary" disabled={saving} onClick={async () => {
-            setSaving(true);
-            try {
-              if (!branchId || !firma.trim() || !(Number(amount) > 0)) throw new Error('Şube, firma ve geçerli tutar zorunlu.');
-              const input = {
-                branch_id: branchId,
-                firma: firma.trim(),
-                seri_no: serial.trim(),
-                icerik: content.trim(),
-                miktar: Number(amount),
-                odenen: Number(paid),
-                tarih: dateValue,
-                vade_tarihi: due || null,
-                fatura_notu: note.trim(),
-                fatura_durumu: Number(amount) - Number(paid) <= 0 ? 'Ödendi' : 'Açık'
-              };
-              if (row) await updateInvoice(row.id, input, user);
-              else await createInvoice(input, user);
-              onSaved();
-            } catch (e) {
-              alert(e instanceof Error ? e.message : 'Fatura kaydedilemedi.');
-            } finally {
-              setSaving(false);
-            }
-          }}>
-            {saving ? 'Kaydediliyor...' : 'Kaydet'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+const pick=(r:Record<string, unknown>, keys:string[], fallback='')=>{for(const k of keys)if(r[k]!==undefined&&r[k]!==null&&String(r[k])!=='')return String(r[k]);return fallback};
+const no=(r:Record<string, unknown>)=>pick(r,['seri_no','fatura_no','invoice_number','invoice_no'],'—');
+const firm=(r:Record<string, unknown>)=>pick(r,['firma','company_name','fatura_adi','invoice_name','name','baslik','title'],'Fatura');
+const date=(r:Record<string, unknown>)=>pick(r,['tarih','fatura_tarihi','invoice_date','date','created_at'],'');
+const total=(r:Record<string, unknown>)=>Number(pick(r,['miktar','genel_toplam','grand_total','total','tutar','amount'],'0'))||0;
+const branch=(r:Record<string, unknown>)=>pick(r,['sube','branch_name'],'Şube');
+const remaining=(r:Record<string, unknown>)=>Number(r.kalan??Math.max(0,total(r)-Number(r.odenen??0)))||0;
+const keyNorm=(v:string)=>v.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('tr-TR').trim();
+type FirmGroup={key:string;name:string;branch:string;invoices:InvoiceRow[];total:number;paid:number;remaining:number};
+function groupByFirm(rows:InvoiceRow[]):FirmGroup[]{const map=new Map<string,FirmGroup>();for(const r of rows){const name=firm(r),br=branch(r),key=keyNorm(name);const g=map.get(key)??{key,name,branch:br,invoices:[],total:0,paid:0,remaining:0};g.branch=g.branch.includes(br)?g.branch:`${g.branch}${g.branch?', ':''}${br}`;g.invoices.push(r);g.total+=total(r);g.paid+=Number(r.odenen??0)||0;g.remaining+=remaining(r);map.set(key,g)}return [...map.values()].sort((a,b)=>a.name.localeCompare(b.name,'tr'));}
+
+export function InvoicePage(){
+ const {user}=useOutletContext<AppOutletContext>();
+ const [rows,setRows]=useState<InvoiceRow[]>([]),[branches,setBranches]=useState<ModuleBranch[]>([]),[q,setQ]=useState(''),[loading,setLoading]=useState(true),[error,setError]=useState('');
+ const [tab,setTab]=useState<'current'|'paid'>('current'),[edit,setEdit]=useState<InvoiceRow|null|undefined>(undefined),[selected,setSelected]=useState<FirmGroup|null>(null),[print,setPrint]=useState<InvoiceRow|null>(null),[payGroup,setPayGroup]=useState<FirmGroup|null>(null);
+ const load=async()=>{setLoading(true);setError('');try{const [i,b]=await Promise.all([loadInvoices(user),loadModuleBranches(user)]);setRows(i);setBranches(b)}catch(e){setError(e instanceof Error?e.message:'Faturalar alınamadı.')}finally{setLoading(false)}};
+ useEffect(()=>{void load()},[user]);
+ const groups=useMemo(()=>groupByFirm(rows).filter(g=>tab==='paid'?g.remaining<=0:g.remaining>0).filter(g=>`${g.name} ${g.branch} ${g.invoices.map(no).join(' ')}`.toLocaleLowerCase('tr-TR').includes(q.toLocaleLowerCase('tr-TR'))),[rows,q,tab]);
+ if(loading)return <div className="loading-panel">Gerçek faturalar yükleniyor...</div>;
+ if(error)return <div className="error-panel"><strong>Faturalar alınamadı</strong><p>{error}</p><button className="primary" onClick={load}><RefreshCw size={16}/> Tekrar dene</button></div>;
+ return <div><div className="page-title"><div><div className="eyebrow">FİNANS · FATURALAR</div><h1>Faturalar</h1><p>Aynı firmaya ait faturalar tek dosyada toplanır. Ödeme, firmanın toplam borcu üzerinden yapılabilir.</p></div><button className="primary" onClick={()=>setEdit(null)}><Plus size={17}/> Yeni fatura</button></div>
+  <div className="invoice-tabs"><button className={tab==='current'?'active':''} onClick={()=>setTab('current')}>Cari Faturalar <b>{groupByFirm(rows).filter(g=>g.remaining>0).length}</b></button><button className={tab==='paid'?'active':''} onClick={()=>setTab('paid')}>Ödenen Faturalar <b>{groupByFirm(rows).filter(g=>g.remaining<=0).length}</b></button></div>
+  <div className="module-summary"><div><span>Firma</span><strong>{groups.length}</strong></div><div><span>Fatura</span><strong>{groups.reduce((s,g)=>s+g.invoices.length,0)}</strong></div><div><span>Toplam</span><strong>{money(groups.reduce((s,g)=>s+g.total,0))}</strong></div><div><span>{tab==='paid'?'Ödenen':'Toplam Borç'}</span><strong>{money(tab==='paid'?groups.reduce((s,g)=>s+g.paid,0):groups.reduce((s,g)=>s+g.remaining,0))}</strong></div></div>
+  <section className="panel module-panel"><div className="module-tools"><div className="search-box"><Search size={18}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Firma, fatura no veya şube ara..."/></div><button className="secondary" onClick={load}><RefreshCw size={16}/> Yenile</button></div>
+   {!groups.length?<div className="empty-module"><div className="empty-icon"><FolderOpen/></div><h3>{tab==='paid'?'Ödenmiş fatura bulunamadı':'Cari fatura bulunamadı'}</h3><p>Yeni fatura ekleyerek başlayabilirsiniz.</p></div>:<div className="invoice-folder-grid">{groups.map(g=><article className="invoice-folder-card invoice-group-card" key={g.key}><button className="invoice-group-main" onClick={()=>setSelected(g)}><div className="folder-icon"><FolderOpen size={24}/></div><div className="folder-main"><strong>{g.name}</strong><span>{g.branch}</span><small>{g.invoices.length} fatura · {tab==='paid'?'Tamamı ödendi':'Toplam borç '+money(g.remaining)}</small></div><div className="folder-total"><b>{money(g.total)}</b><small>Ödenen {money(g.paid)}</small><small>Kalan {money(g.remaining)}</small></div></button>{tab==='current'&&<button className="primary group-pay-button" onClick={()=>setPayGroup(g)} disabled={g.remaining<=0}><Wallet size={16}/> Toplam Borcu Öde</button>}</article>)}</div>}
+  </section>
+  {edit!==undefined&&<InvoiceModal row={edit} branches={branches} user={user} onClose={()=>setEdit(undefined)} onSaved={()=>{setEdit(undefined);void load()}}/>}
+  {selected&&<InvoiceContents group={selected} user={user} onClose={()=>setSelected(null)} onEdit={(r)=>{setSelected(null);setEdit(r)}} onPrint={setPrint} onDelete={async(r)=>{if(!confirm(`${no(r)} numaralı fatura silinsin mi?`))return;try{await deleteInvoice(String(r.id));setSelected(null);await load()}catch(e){alert(e instanceof Error?e.message:'Fatura silinemedi.')}}}/>} 
+  {payGroup&&<GroupPaymentModal group={payGroup} user={user} onClose={()=>setPayGroup(null)} onSaved={()=>{setPayGroup(null);void load()}}/>}
+  {print&&<InvoicePrintModal invoice={print} onClose={()=>setPrint(null)}/>}</div>
 }
-```[cite: 4]
+
+function InvoiceContents({group,user,onClose,onEdit,onPrint,onDelete}:{group:FirmGroup;user:AppOutletContext['user'];onClose:()=>void;onEdit:(r:InvoiceRow)=>void;onPrint:(r:InvoiceRow)=>void;onDelete:(r:InvoiceRow)=>Promise<void>}){return <div className="modal-backdrop"><div className="modal-card invoice-contents-modal"><div className="modal-head"><div><div className="eyebrow">FATURA DOSYASI</div><h2>{group.name}</h2><p>{group.branch} · {group.invoices.length} fatura · Kalan {money(group.remaining)}</p></div><button className="icon-btn" onClick={onClose}><X/></button></div><div className="invoice-content-list">{group.invoices.map(r=>{const rem=remaining(r);return <div className="invoice-content-row" key={String(r.id)}><div className="invoice-content-info"><span className="tx-icon income"><FileText size={16}/></span><div><strong>{no(r)}</strong><small>{date(r)?new Date(date(r)).toLocaleDateString('tr-TR'):'—'} · {pick(r,['icerik','fatura_notu'],'İçerik belirtilmemiş')}</small></div></div><div><span className={`badge ${rem<=0?'success':'warning'}`}>{rem<=0?'Ödendi':'Cari'}</span></div><div className="right"><strong>{money(total(r))}</strong><small>Kalan {money(rem)}</small></div><div className="invoice-actions"><button className="icon-btn inline" title="Düzenle" onClick={()=>onEdit(r)}><Edit3 size={16}/></button><button className="icon-btn inline" title="PDF" onClick={()=>onPrint(r)}><Printer size={16}/></button><button className="icon-btn inline danger" title="Sil" onClick={()=>void onDelete(r)}><Trash2 size={16}/></button></div></div>})}</div></div></div>}
+
+function GroupPaymentModal({group,user,onClose,onSaved}:{group:FirmGroup;user:AppOutletContext['user'];onClose:()=>void;onSaved:()=>void}){const [amount,setAmount]=useState(String(group.remaining)),[method,setMethod]=useState<'Kasa'|'Kart'>('Kasa'),[dateValue,setDateValue]=useState(new Date().toISOString().slice(0,10)),[saving,setSaving]=useState(false);const max=group.remaining;const submit=async()=>{const value=Number(amount);if(!(value>0)||value>max)return alert('Ödeme tutarı toplam borçtan büyük olamaz.');setSaving(true);try{let left=value;for(const invoice of [...group.invoices].sort((a,b)=>String(date(a)).localeCompare(String(date(b))))){const rem=remaining(invoice);if(rem<=0||left<=0)continue;const part=Math.min(left,rem);await createInvoicePayment({invoice_id:String(invoice.id),branch_id:String(invoice.branch_id),miktar:part,tarih:dateValue,tur:method},user);left-=part;}if(left>0.001)throw new Error('Ödeme dağıtımı tamamlanamadı.');onSaved()}catch(e){alert(e instanceof Error?e.message:'Toplu ödeme kaydedilemedi.')}finally{setSaving(false)}};return <div className="modal-backdrop"><div className="modal-card payment-modal"><div className="modal-head"><div><div className="eyebrow">CARİ HESAP · TOPLU ÖDEME</div><h2>{group.name}</h2><p>{group.invoices.length} fatura · Toplam borç <strong>{money(max)}</strong></p></div><button className="icon-btn" onClick={onClose}><X/></button></div><div className="group-payment-total"><span>Ödenecek toplam</span><strong>{money(max)}</strong><small>Ödeme, faturaların kalan bakiyelerine otomatik dağıtılır.</small></div><div className="payment-methods"><button className={`payment-method ${method==='Kasa'?'selected':''}`} onClick={()=>setMethod('Kasa')}><Wallet size={20}/><span>Kasa</span></button><button className={`payment-method ${method==='Kart'?'selected':''}`} onClick={()=>setMethod('Kart')}><CreditCard size={20}/><span>Kart</span></button></div><div className="form-grid"><label>Ödeme tutarı<input type="number" min="0.01" max={max} step="0.01" value={amount} onChange={e=>setAmount(e.target.value)}/></label><label>Tarih<input type="date" value={dateValue} onChange={e=>setDateValue(e.target.value)}/></label></div><div className="modal-actions"><button className="secondary" onClick={onClose}>Vazgeç</button><button className="primary" disabled={saving} onClick={submit}><CheckCircle2 size={16}/>{saving?'Kaydediliyor...':'Toplam borcu öde'}</button></div></div></div>}
+
+function InvoiceModal({row,branches,user,onClose,onSaved}:{row:InvoiceRow|null;branches:ModuleBranch[];user:AppOutletContext['user'];onClose:()=>void;onSaved:()=>void}){const [saving,setSaving]=useState(false),[branchId,setBranchId]=useState(pick(row||{},['branch_id'],user.branchIds[0]||branches[0]?.id||'')),[firma,setFirma]=useState(pick(row||{},['firma','fatura_adi'],'')),[serial,setSerial]=useState(pick(row||{},['seri_no','fatura_no'],'')),[content,setContent]=useState(pick(row||{},['icerik'],'')),[amount,setAmount]=useState(String(total(row||{}))),[paid,setPaid]=useState(String(Number(row?.odenen??0))),[dateValue,setDateValue]=useState(pick(row||{},['tarih'],new Date().toISOString().slice(0,10))),[due,setDue]=useState(pick(row||{},['vade_tarihi'],'')),[note,setNote]=useState(pick(row||{},['fatura_notu'],''));return <div className="modal-backdrop"><div className="modal-card wide-modal"><div className="modal-head"><div><div className="eyebrow">FATURA</div><h2>{row?'Faturayı düzenle':'Yeni fatura'}</h2></div><button className="icon-btn" onClick={onClose}><X/></button></div><div className="form-grid"><label>Şube<select value={branchId} onChange={e=>setBranchId(e.target.value)}>{branches.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}</select></label><label>Firma<input value={firma} onChange={e=>setFirma(e.target.value)}/></label><label>Fatura / seri no<input value={serial} onChange={e=>setSerial(e.target.value)}/></label><label>Toplam tutar<input type="number" min="0" step="0.01" value={amount} onChange={e=>setAmount(e.target.value)}/></label><label>İlk ödeme<input type="number" min="0" step="0.01" value={paid} onChange={e=>setPaid(e.target.value)}/></label><label>Tarih<input type="date" value={dateValue} onChange={e=>setDateValue(e.target.value)}/></label><label>Vade tarihi<input type="date" value={due} onChange={e=>setDue(e.target.value)}/></label><label>İçerik<input value={content} onChange={e=>setContent(e.target.value)}/></label><label>Not<textarea value={note} onChange={e=>setNote(e.target.value)}/></label></div><div className="modal-actions"><button className="secondary" onClick={onClose}>Vazgeç</button><button className="primary" disabled={saving} onClick={async()=>{setSaving(true);try{if(!branchId||!firma.trim()||!(Number(amount)>0))throw new Error('Şube, firma ve geçerli tutar zorunlu.');const input={branch_id:branchId,firma:firma.trim(),seri_no:serial.trim(),icerik:content.trim(),miktar:Number(amount),odenen:Number(paid),tarih:dateValue,vade_tarihi:due||null,fatura_notu:note.trim(),fatura_durumu:Number(amount)-Number(paid)<=0?'Ödendi':'Açık'};if(row)await updateInvoice(row.id,input,user);else await createInvoice(input,user);onSaved()}catch(e){alert(e instanceof Error?e.message:'Fatura kaydedilemedi.')}finally{setSaving(false)}}}>{saving?'Kaydediliyor...':'Kaydet'}</button></div></div></div>}
+
+function InvoicePrintModal({invoice,onClose}:{invoice:InvoiceRow;onClose:()=>void}){return <div className="modal-backdrop print-backdrop"><div className="print-shell"><div className="print-toolbar"><button className="secondary" onClick={onClose}>Kapat</button><button className="primary" onClick={()=>window.print()}>Yazdır</button></div><div className="invoice-paper"><h1>FATURA</h1><p><strong>{firm(invoice)}</strong></p><p>Fatura No: {no(invoice)}</p><p>Tarih: {date(invoice)}</p><h2>{money(total(invoice))}</h2><p>{pick(invoice,['icerik','fatura_notu'],'')}</p></div></div></div>}
