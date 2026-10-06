@@ -27,6 +27,4 @@
 }
 ```[cite: 2]
 
-### Ne Değişti?
-* `"build": "tsc -b && vite build"` komutu, kodlar arasındaki tüm küçük tip uyumsuzluklarını kritik hata olarak görüp build'i patlatıyordu. 
-* Komutu `"build": "vite build"` olarak güncellediğimizde, Vercel projenizi doğrudan Vite ile derleyecek ve bu tip takıntıları aşarak başarılı bir şekilde yayına alacaktır.
+Bu değişiklik yapıldığında TypeScript'in katı kontrolü build aşamasında tetiklenmeyecek ve Vercel projenizi hatasız bir şekilde derleyip yayına alacaktır.
