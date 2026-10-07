@@ -151,8 +151,9 @@ export function AppLayout() {
     if (item.help) { setHelpItem(item.help); setNoticeOpen(false); }
   };
 
-  return <div className="app-shell">
+  return <div className={`app-shell ${mobileOpen ? 'mobile-nav-open' : ''}`}>
     <Sidebar mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} user={scopedUser} scopeTitle={scopeTitle} scopeSubtitle={scopeSubtitle} onLogout={logout} />
+    {mobileOpen && <button className="mobile-overlay" aria-label="Menüyü kapat" onClick={() => setMobileOpen(false)} />}
     <main className="main">
       <header className="topbar">
         <button className="mobile-menu" onClick={() => setMobileOpen(true)} aria-label="Menü"><Menu /></button>
