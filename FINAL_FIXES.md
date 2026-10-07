@@ -1,3 +1,4 @@
+
 # KASA PRO V19 - Final Fixes
 
 ## Core fixes
@@ -17,3 +18,5 @@
 
 ## Supabase
 Run `SUPABASE_1_SEFER_FINAL_GUVENLI.sql` once in Supabase SQL Editor. It contains the secure RPCs required by the application. The Edge Functions in `supabase/functions/` are retained only as optional compatibility paths.
+
+

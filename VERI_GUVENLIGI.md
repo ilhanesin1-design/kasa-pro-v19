@@ -1,3 +1,4 @@
+
 # V19 Veri Güvenliği
 
 Bu paket, mevcut Supabase verilerini silmek veya değiştirmek amacıyla herhangi bir migration çalıştırmaz.
@@ -9,3 +10,5 @@ Bu paket, mevcut Supabase verilerini silmek veya değiştirmek amacıyla herhang
 - Mevcut finansal tabloların verileri değiştirilmez.
 
 Not: `supabase/migrations/` klasöründeki SQL dosyaları mevcut projeye otomatik uygulanmamalıdır. Bu paketteki düzeltmeler için migration çalıştırmak gerekli değildir.
+
+

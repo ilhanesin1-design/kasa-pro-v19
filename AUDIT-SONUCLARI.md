@@ -1,3 +1,4 @@
+
 # KASA PRO V19 - Tek Seferlik Kod Denetimi
 
 ## Düzeltilenler
@@ -32,3 +33,5 @@ POSMIST username login için:
 `supabase functions deploy login-with-username`
 
 ve Edge Function secret'ları Supabase tarafında tanımlanmalıdır. Service role key hiçbir zaman React/Tauri frontend'e konulmamalıdır.
+
+

@@ -1,3 +1,4 @@
+
 -- KASA PRO V19 - CANLI ŞEMA UYUMLULUK KATMANI
 -- Güvenli: otomatik DROP/TRUNCATE yok. Mevcut iş verileri kendiliğinden silinmez/değiştirilmez.
 -- Bu fonksiyonlar yalnızca uygulamadaki kullanıcı eylemleri çağrıldığında veri yazar/günceller.
@@ -561,3 +562,5 @@ end; $$;
 grant execute on function public.v19_mark_notification_read(uuid) to authenticated;
 
 notify pgrst, 'reload schema';
+
+
