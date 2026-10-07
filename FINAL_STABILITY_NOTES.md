@@ -1,4 +1,3 @@
-
 # KASA PRO V19 — Stability Patch
 
 - Supabase istekleri 12 saniye timeout ile korunur; sonsuz yüklenme durumları engellenir.
@@ -10,5 +9,3 @@
 - Demo finans rakamları kullanılmaz.
 - Harici Google Fonts bağımlılığı kaldırılmıştır; uygulama çevrimdışı açılışta font beklemez.
 - Mevcut Supabase verilerini silen/değiştiren migration bu pakete eklenmemiştir.
-
-

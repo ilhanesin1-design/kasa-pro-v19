@@ -1,4 +1,3 @@
-
 # KASA PRO V19 FINAL - Kurulum
 
 ## 1. Frontend
@@ -73,5 +72,3 @@ kullanılabilir.
 ## 6. Yardım Merkezi
 
 Yardım mesajı `notifications` tablosuna SUPER_ADMIN kullanıcılarına düşer. SUPER_ADMIN uygulamaya girdiğinde üst bildirim merkezinde ve Bildirim Merkezi sayfasında görünür.
-
-
