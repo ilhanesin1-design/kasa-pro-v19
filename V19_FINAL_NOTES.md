@@ -1,4 +1,3 @@
-
 # KASA PRO V19 - Final çalışma paketi
 
 Bu paket mevcut çalışan V19 Tauri + React + TypeScript + Supabase projesi üzerinden hazırlanmıştır.
@@ -31,5 +30,3 @@ Bu paket mevcut çalışan V19 Tauri + React + TypeScript + Supabase projesi üz
 
 ## Not
 POSMIST'in günlük 23:59 otomasyonu gerçek POSMIST API'sinin doğrulanmış API sözleşmesine ve Supabase Edge Function dağıtımına bağlıdır. Bu paket POSMIST yönetim ekranını ve güvenli istemci tarafı görünümünü içerir; doğrulanmamış bir üçüncü taraf API davranışı uydurulmamıştır.
-
-

@@ -1,4 +1,3 @@
-
 # KASA PRO V19 — Final çalışma notları
 
 ## Yapılanlar
@@ -17,5 +16,3 @@
 - Fatura oluşturma için tablo şeması bilinmeden kolon uydurulmamıştır.
 - Projede service-role anahtarı frontend'e konulmamıştır.
 - `npm install` bu çalışma ortamında ağ zaman aşımı nedeniyle tamamlanamadı; bu nedenle burada tam TypeScript/Vite build doğrulaması yapılamadı. Windows makinede mevcut çalışan proje üzerinde `npm install` sonrası `npm run build` ve `npm run tauri:dev` çalıştırılmalıdır.
-
-

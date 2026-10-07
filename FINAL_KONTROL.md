@@ -1,4 +1,3 @@
-
 # KASA PRO V19 – FINAL KONTROL
 
 Bu paket, kullanıcı tarafından bildirilen toplu sorunların tek sürümde birleştirilmiş çalışma tabanıdır.
@@ -28,5 +27,3 @@ Bu paket, kullanıcı tarafından bildirilen toplu sorunların tek sürümde bir
 - TS/TSX syntax/transpile kontrolü: 0 hata
 - ZIP arşiv kontrolü: final paket oluşturulurken ayrıca doğrulanmalıdır.
 - Tam Windows `npm run build` ve `cargo check` bu çalışma ortamında Node/Rust bağımlılıkları kurulumu ve Rust toolchain erişimi olmadığı için burada çalıştırılamamıştır.
-
-

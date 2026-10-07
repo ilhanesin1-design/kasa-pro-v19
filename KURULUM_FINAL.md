@@ -1,4 +1,3 @@
-
 # KASA PRO V19 — FINAL KURULUM
 
 ## Windows
@@ -29,5 +28,3 @@ Login ekranındaki 5 yerel fotoğraf `src/assets/hero/01.png` ... `05.png` dosya
 ## Doğrulama
 
 Kaynak TS/TSX dosyaları TypeScript transpile/syntax kontrolünden geçirildi. Bu ortamda npm registry erişimi zaman aşımına uğradığı için tam `npm build` ve Windows Tauri production build çalıştırılamadı.
-
-

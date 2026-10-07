@@ -1,4 +1,3 @@
-
 # KASA PRO V19 Windows Kurulum
 
 1. Bu klasöre mevcut çalışan `.env` dosyanızı kopyalayın.
@@ -12,5 +11,3 @@
 Service-role anahtarını `.env` içine koymayın.
 
 Kullanıcı oluşturma ve Yardım Merkezi için Edge Function deploy zorunlu değildir; ana uygulama RPC uyumluluk katmanını kullanır. Proje INACTIVE olduğu sürece Edge Function deploy komutları 404 verebilir.
-
-

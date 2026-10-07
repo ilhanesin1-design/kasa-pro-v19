@@ -1,4 +1,3 @@
-
 # KASA PRO V19 - Tek Seferlik Audit / Düzeltme Paketi
 
 Bu sürüm demo finans rakamlarını kaldırır ve Supabase'i tek veri kaynağı olarak kullanır.
@@ -21,5 +20,3 @@ Canlı Supabase şemasına erişim olmadan bilinmeyen tablo kolonlarına CRUD ya
 
 ## Gerekli canlı doğrulama
 Supabase tarafında mevcut RLS/policies ve gerçek tablo şeması ile test edilmelidir. Özellikle `profiles`, `user_branch_roles`, `branches`, `app_transactions` kolonları V19'un kullandığı alanlarla uyumlu olmalıdır.
-
-

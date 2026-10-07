@@ -1,4 +1,3 @@
-
 # KASA PRO V19 · BY İLHAN EŞİN
 
 Tauri 2 + React + TypeScript + Supabase ile çalışan masaüstü finans yönetim uygulaması.
@@ -28,5 +27,3 @@ Service-role anahtarını `.env` içine koymayın.
 
 ## Önemli
 Supabase projesindeki mevcut veriler uygulama açılışında topluca silinmez veya güncellenmez. Yazma işlemleri yalnızca kullanıcı ilgili butona basıp kaydettiğinde gerçekleşir.
-
-
