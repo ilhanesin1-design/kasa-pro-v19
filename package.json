@@ -1,7 +1,7 @@
 {
   "name": "kasa-pro-v19",
   "private": true,
-  "version": "19.31.0",
+  "version": "19.33.0",
   "type": "module",
   "scripts": {
     "dev": "vite",

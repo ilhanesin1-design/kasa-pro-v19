@@ -1,3 +1,4 @@
+# KASA PRO V19 - 19.33 BRANCH/REST COMPATIBILITY UPDATE
 -- KASA PRO V19 - CANLI ŞEMA UYUMLULUK KATMANI
 -- Güvenli: otomatik DROP/TRUNCATE yok. Mevcut iş verileri kendiliğinden silinmez/değiştirilmez.
 -- Bu fonksiyonlar yalnızca uygulamadaki kullanıcı eylemleri çağrıldığında veri yazar/günceller.
@@ -71,7 +72,7 @@ begin
   select public.v19_norm_role(coalesce(auth.jwt()->'app_metadata'->>'role', auth.jwt()->'user_metadata'->>'role','')) into metadata_role;
   if metadata_role in ('SUPER_ADMIN','SUPERADMIN','PLATFORM_ADMIN','SUPER_ADMINISTRATOR') then return true; end if;
 
-  role_table := public.v19_pick_table(array['kullanıcı_şubesi_rolleri','kullanici_subesi_rolleri','user_branch_roles']);
+  role_table := public.v19_pick_table(array['kullanıcı_şubesi_rolleri','Kullanıcı_Şubesi_Rolleri','kullanici_subesi_rolleri','Kullanici_Subesi_Rolleri','user_branch_roles','User_Branch_Roles']);
   if role_table is null then return false; end if;
   user_col := public.v19_column_name(role_table,array['user_id','kullanici_id','kullanıcı_id']);
   role_col := public.v19_column_name(role_table,array['role','rol','kullanici_rolu','kullanıcı_rolü']);
@@ -180,7 +181,7 @@ as $$
 declare t text; q text; out jsonb;
 begin
   if not public.v19_is_super_admin() then raise exception 'Yalnızca SUPER_ADMIN.'; end if;
-  t:=public.v19_pick_table(array['şirketler','sirketler','companies']);
+  t:=public.v19_pick_table(array['şirketler','Şirketler','sirketler','Sirketler','companies','Companies','company','işletmeler','İşletmeler','isletmeler']);
   if t is null then return '[]'::jsonb; end if;
   q:=format($f$
     select coalesce(jsonb_agg(jsonb_build_object(
@@ -207,7 +208,7 @@ as $$
 declare t text; q text; out jsonb;
 begin
   if not public.v19_is_super_admin() then raise exception 'Yalnızca SUPER_ADMIN.'; end if;
-  t:=public.v19_pick_table(array['şubeler','subeler','branches','dallar']);
+  t:=public.v19_pick_table(array['şubeler','Şubeler','subeler','Subeler','branches','Branches','dallar','Dallar','sube','Sube','branch','Branch']);
   if t is null then return '[]'::jsonb; end if;
   q:=format($f$
     select coalesce(jsonb_agg(jsonb_build_object(
@@ -239,7 +240,7 @@ as $$
 declare t text; u text; c text; b text; r text; q text; out jsonb;
 begin
   if not public.v19_is_super_admin() then raise exception 'Yalnızca SUPER_ADMIN.'; end if;
-  t:=public.v19_pick_table(array['kullanıcı_şubesi_rolleri','kullanici_subesi_rolleri','user_branch_roles']);
+  t:=public.v19_pick_table(array['kullanıcı_şubesi_rolleri','Kullanıcı_Şubesi_Rolleri','kullanici_subesi_rolleri','Kullanici_Subesi_Rolleri','user_branch_roles','User_Branch_Roles']);
   if t is null then
     select coalesce(jsonb_agg(jsonb_build_object('id',p.id,'username',coalesce(p.username,''),'full_name',coalesce(p.full_name,''),'email',coalesce(p.email,''),'is_active',coalesce(p.is_active,true),'role',coalesce(to_jsonb(p)->>'role',''),'company_id',coalesce(to_jsonb(p)->>'company_id',''),'branch_id',coalesce(to_jsonb(p)->>'branch_id',''))),'[]'::jsonb) into out from public.profiles p;
     return out;
@@ -272,7 +273,7 @@ declare v_id uuid;
 begin
   if not public.v19_is_super_admin() then raise exception 'Yalnızca SUPER_ADMIN.'; end if;
   if nullif(trim(p_name),'') is null then raise exception 'İşletme adı zorunludur.'; end if;
-  v_id:=public.v19_insert_json(array['şirketler','sirketler','companies'],jsonb_build_object(
+  v_id:=public.v19_insert_json(array['şirketler','Şirketler','sirketler','Sirketler','companies','Companies','company','işletmeler','İşletmeler','isletmeler'],jsonb_build_object(
     'name',trim(p_name),'şirket_adi',trim(p_name),'sirket_adi',trim(p_name),'işletme_adi',trim(p_name),'isletme_adi',trim(p_name),'ad',trim(p_name),'isim',trim(p_name),'firma',trim(p_name),'unvan',trim(p_name),'ticari_unvan',trim(p_name),'ticari_unvanı',trim(p_name),
     'tax_number',nullif(trim(p_tax_number),''),'vergi_no',nullif(trim(p_tax_number),''),'vergi_numarasi',nullif(trim(p_tax_number),''),'vergi_numarası',nullif(trim(p_tax_number),''),
     'phone',nullif(trim(p_phone),''),'telefon',nullif(trim(p_phone),''),'email',nullif(trim(p_email),''),'eposta',nullif(trim(p_email),''),'e_posta',nullif(trim(p_email),''),
@@ -287,7 +288,7 @@ create or replace function public.v19_update_company(p_id uuid,p_name text,p_tax
 returns void language plpgsql security definer set search_path=public,pg_catalog as $$
 begin
   if not public.v19_is_super_admin() then raise exception 'Yalnızca SUPER_ADMIN.'; end if;
-  perform public.v19_update_json(array['şirketler','sirketler','companies'],p_id,jsonb_build_object('name',trim(p_name),'şirket_adi',trim(p_name),'sirket_adi',trim(p_name),'işletme_adi',trim(p_name),'isletme_adi',trim(p_name),'ad',trim(p_name),'isim',trim(p_name),'firma',trim(p_name),'tax_number',nullif(trim(p_tax_number),''),'vergi_no',nullif(trim(p_tax_number),''),'phone',nullif(trim(p_phone),''),'telefon',nullif(trim(p_phone),''),'email',nullif(trim(p_email),''),'eposta',nullif(trim(p_email),''),'address',nullif(trim(p_address),''),'adres',nullif(trim(p_address),''),'is_active',p_is_active,'aktif',p_is_active));
+  perform public.v19_update_json(array['şirketler','Şirketler','sirketler','Sirketler','companies','Companies','company','işletmeler','İşletmeler','isletmeler'],p_id,jsonb_build_object('name',trim(p_name),'şirket_adi',trim(p_name),'sirket_adi',trim(p_name),'işletme_adi',trim(p_name),'isletme_adi',trim(p_name),'ad',trim(p_name),'isim',trim(p_name),'firma',trim(p_name),'tax_number',nullif(trim(p_tax_number),''),'vergi_no',nullif(trim(p_tax_number),''),'phone',nullif(trim(p_phone),''),'telefon',nullif(trim(p_phone),''),'email',nullif(trim(p_email),''),'eposta',nullif(trim(p_email),''),'address',nullif(trim(p_address),''),'adres',nullif(trim(p_address),''),'is_active',p_is_active,'aktif',p_is_active));
 end; $$;
 grant execute on function public.v19_update_company(uuid,text,text,text,text,text,boolean) to authenticated;
 
@@ -297,7 +298,7 @@ declare v_id uuid;
 begin
   if not public.v19_is_super_admin() then raise exception 'Yalnızca SUPER_ADMIN.'; end if;
   if not exists (select 1 from jsonb_array_elements(public.v19_get_companies()) x where x->>'id'=p_company_id::text) then raise exception 'İşletme bulunamadı.'; end if;
-  v_id:=public.v19_insert_json(array['şubeler','subeler','branches','dallar'],jsonb_build_object('company_id',p_company_id,'şirket_id',p_company_id,'sirket_id',p_company_id,'işletme_id',p_company_id,'isletme_id',p_company_id,'name',trim(p_name),'şube_adi',trim(p_name),'sube_adi',trim(p_name),'ad',trim(p_name),'isim',trim(p_name),'branch_name',trim(p_name),'sube',trim(p_name),'code',nullif(trim(p_code),''),'kod',nullif(trim(p_code),''),'phone',nullif(trim(p_phone),''),'telefon',nullif(trim(p_phone),''),'email',nullif(trim(p_email),''),'eposta',nullif(trim(p_email),''),'address',nullif(trim(p_address),''),'adres',nullif(trim(p_address),''),'city',nullif(trim(p_city),''),'şehir',nullif(trim(p_city),''),'sehir',nullif(trim(p_city),''),'district',nullif(trim(p_district),''),'ilçe',nullif(trim(p_district),''),'ilce',nullif(trim(p_district),''),'is_active',true,'aktif',true));
+  v_id:=public.v19_insert_json(array['şubeler','Şubeler','subeler','Subeler','branches','Branches','dallar','Dallar','sube','Sube','branch','Branch'],jsonb_build_object('company_id',p_company_id,'şirket_id',p_company_id,'sirket_id',p_company_id,'işletme_id',p_company_id,'isletme_id',p_company_id,'name',trim(p_name),'şube_adi',trim(p_name),'sube_adi',trim(p_name),'ad',trim(p_name),'isim',trim(p_name),'branch_name',trim(p_name),'sube',trim(p_name),'code',nullif(trim(p_code),''),'kod',nullif(trim(p_code),''),'phone',nullif(trim(p_phone),''),'telefon',nullif(trim(p_phone),''),'email',nullif(trim(p_email),''),'eposta',nullif(trim(p_email),''),'address',nullif(trim(p_address),''),'adres',nullif(trim(p_address),''),'city',nullif(trim(p_city),''),'şehir',nullif(trim(p_city),''),'sehir',nullif(trim(p_city),''),'district',nullif(trim(p_district),''),'ilçe',nullif(trim(p_district),''),'ilce',nullif(trim(p_district),''),'is_active',true,'aktif',true));
   return v_id;
 end; $$;
 grant execute on function public.v19_create_branch(uuid,text,text,text,text,text,text,text) to authenticated;
@@ -306,7 +307,7 @@ create or replace function public.v19_update_branch(p_id uuid,p_company_id uuid,
 returns void language plpgsql security definer set search_path=public,pg_catalog as $$
 begin
   if not public.v19_is_super_admin() then raise exception 'Yalnızca SUPER_ADMIN.'; end if;
-  perform public.v19_update_json(array['şubeler','subeler','branches','dallar'],p_id,jsonb_build_object('company_id',p_company_id,'şirket_id',p_company_id,'sirket_id',p_company_id,'işletme_id',p_company_id,'isletme_id',p_company_id,'name',trim(p_name),'şube_adi',trim(p_name),'sube_adi',trim(p_name),'ad',trim(p_name),'isim',trim(p_name),'code',nullif(trim(p_code),''),'kod',nullif(trim(p_code),''),'phone',nullif(trim(p_phone),''),'telefon',nullif(trim(p_phone),''),'email',nullif(trim(p_email),''),'eposta',nullif(trim(p_email),''),'address',nullif(trim(p_address),''),'adres',nullif(trim(p_address),''),'city',nullif(trim(p_city),''),'şehir',nullif(trim(p_city),''),'district',nullif(trim(p_district),''),'ilçe',nullif(trim(p_district),''),'is_active',p_is_active,'aktif',p_is_active));
+  perform public.v19_update_json(array['şubeler','Şubeler','subeler','Subeler','branches','Branches','dallar','Dallar','sube','Sube','branch','Branch'],p_id,jsonb_build_object('company_id',p_company_id,'şirket_id',p_company_id,'sirket_id',p_company_id,'işletme_id',p_company_id,'isletme_id',p_company_id,'name',trim(p_name),'şube_adi',trim(p_name),'sube_adi',trim(p_name),'ad',trim(p_name),'isim',trim(p_name),'code',nullif(trim(p_code),''),'kod',nullif(trim(p_code),''),'phone',nullif(trim(p_phone),''),'telefon',nullif(trim(p_phone),''),'email',nullif(trim(p_email),''),'eposta',nullif(trim(p_email),''),'address',nullif(trim(p_address),''),'adres',nullif(trim(p_address),''),'city',nullif(trim(p_city),''),'şehir',nullif(trim(p_city),''),'district',nullif(trim(p_district),''),'ilçe',nullif(trim(p_district),''),'is_active',p_is_active,'aktif',p_is_active));
 end; $$;
 grant execute on function public.v19_update_branch(uuid,uuid,text,text,text,text,text,text,text,boolean) to authenticated;
 
@@ -316,14 +317,14 @@ declare t text; u text; c text; b text; r text; q text; existing_id uuid; v_id u
 begin
   if not public.v19_is_super_admin() then raise exception 'Yalnızca SUPER_ADMIN.'; end if;
   if not exists(select 1 from public.profiles where id=p_user_id) then raise exception 'Kullanıcı bulunamadı.'; end if;
-  t:=public.v19_pick_table(array['kullanıcı_şubesi_rolleri','kullanici_subesi_rolleri','user_branch_roles']);
+  t:=public.v19_pick_table(array['kullanıcı_şubesi_rolleri','Kullanıcı_Şubesi_Rolleri','kullanici_subesi_rolleri','Kullanici_Subesi_Rolleri','user_branch_roles','User_Branch_Roles']);
   if t is null then raise exception 'Kullanıcı/şube/rol tablosu bulunamadı.'; end if;
   u:=public.v19_column_name(t,array['user_id','kullanici_id','kullanıcı_id']); c:=public.v19_column_name(t,array['company_id','şirket_id','sirket_id','işletme_id','isletme_id']); b:=public.v19_column_name(t,array['branch_id','şube_id','sube_id']); r:=public.v19_column_name(t,array['role','rol','kullanici_rolu','kullanıcı_rolü']);
   if u is null or c is null or r is null then raise exception 'Atama tablosunda beklenen alanlar bulunamadı.'; end if;
   q:=format('select r.id from public.%I r where r.%I=$1 and r.%I=$2 and (%s) and public.v19_norm_role(r.%I::text)=public.v19_norm_role($4) limit 1',t,u,c,case when b is null then 'true' else format('r.%I=$3',b) end,r);
   execute q into existing_id using p_user_id,p_company_id,p_branch_id,p_role;
   if existing_id is not null then return existing_id; end if;
-  v_id:=public.v19_insert_json(array['kullanıcı_şubesi_rolleri','kullanici_subesi_rolleri','user_branch_roles'],jsonb_build_object('user_id',p_user_id,'kullanici_id',p_user_id,'kullanıcı_id',p_user_id,'company_id',p_company_id,'şirket_id',p_company_id,'sirket_id',p_company_id,'işletme_id',p_company_id,'isletme_id',p_company_id,'branch_id',p_branch_id,'şube_id',p_branch_id,'sube_id',p_branch_id,'role',p_role,'rol',p_role,'kullanici_rolu',p_role,'kullanıcı_rolü',p_role));
+  v_id:=public.v19_insert_json(array['kullanıcı_şubesi_rolleri','Kullanıcı_Şubesi_Rolleri','kullanici_subesi_rolleri','Kullanici_Subesi_Rolleri','user_branch_roles','User_Branch_Roles'],jsonb_build_object('user_id',p_user_id,'kullanici_id',p_user_id,'kullanıcı_id',p_user_id,'company_id',p_company_id,'şirket_id',p_company_id,'sirket_id',p_company_id,'işletme_id',p_company_id,'isletme_id',p_company_id,'branch_id',p_branch_id,'şube_id',p_branch_id,'sube_id',p_branch_id,'role',p_role,'rol',p_role,'kullanici_rolu',p_role,'kullanıcı_rolü',p_role));
   return v_id;
 end; $$;
 grant execute on function public.v19_assign_user(uuid,uuid,uuid,text) to authenticated;
@@ -503,7 +504,7 @@ begin
   ) x;
 
   -- Gerçek rol tablosu Türkçe ise dinamik olarak kullan; İngilizce tablo adına bağımlı olma.
-  role_table:=public.v19_pick_table(array['kullanıcı_şubesi_rolleri','kullanici_subesi_rolleri','user_branch_roles']);
+  role_table:=public.v19_pick_table(array['kullanıcı_şubesi_rolleri','Kullanıcı_Şubesi_Rolleri','kullanici_subesi_rolleri','Kullanici_Subesi_Rolleri','user_branch_roles','User_Branch_Roles']);
   if role_table is not null then
     user_col:=public.v19_column_name(role_table,array['user_id','kullanici_id','kullanıcı_id']);
     role_col:=public.v19_column_name(role_table,array['role','rol','kullanici_rolu','kullanıcı_rolü']);
