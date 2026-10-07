@@ -1,3 +1,4 @@
+
 # V19.12 FINAL SORUN DÜZELTMESİ
 
 - SUPER_ADMIN tespiti DB tarafında profiles.role + user_branch_roles + JWT metadata
@@ -8,3 +9,5 @@
 - Rapor Merkezi gerçek veriden kurumsal XLSX: özet, finans hareketleri, faturalar, cari
 - PDF/Yazdır korunmuştur
 - Mevcut finans verilerini silen DROP/TRUNCATE/DELETE migration eklenmedi
+
+
