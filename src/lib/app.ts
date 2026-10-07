@@ -1,4 +1,3 @@
-
 import { createEphemeralSupabase, supabase } from './supabase';
 
 const DB_TIMEOUT_MS = 12000;
@@ -15,8 +14,9 @@ async function withTimeout<T>(promiseLike: PromiseLike<T>, label: string, timeou
   }
 }
 
-const db = (promiseLike: PromiseLike<any>, label: string, timeoutMs = DB_TIMEOUT_MS): Promise<any> =>
-  withTimeout<any>(promiseLike, label, timeoutMs);
+async function db(promiseLike: PromiseLike<any>, label: string, timeoutMs = DB_TIMEOUT_MS): Promise<any> {
+  return withTimeout<any>(promiseLike, label, timeoutMs);
+}
 type AnySupabase = NonNullable<typeof supabase>;
 type AnyRow = Record<string, any>;
 
@@ -74,8 +74,7 @@ async function resolveTable(sb: AnySupabase, candidates: readonly string[], labe
   const cached = tableCache.get(cacheKey);
   if (cached) return cached;
   for (const name of candidates) {
-    const result = await db((sb as any).from(name).select('*', { head: true, count: 'exact' }), `${label} bağlantısı`, 7000) as { error: any };
-    const error = result.error;
+    const { error } = await db((sb as any).from(name).select('*', { head: true, count: 'exact' }), `${label} bağlantısı`, 7000);
     if (!error) { tableCache.set(cacheKey, name); return name; }
     const code = String(error.code ?? '');
     const message = String(error.message ?? '').toLowerCase();
@@ -87,9 +86,7 @@ async function resolveTable(sb: AnySupabase, candidates: readonly string[], labe
 
 async function fetchRows(sb: AnySupabase, candidates: readonly string[], label: string, limit = 5000): Promise<AnyRow[]> {
   const t = await resolveTable(sb, candidates, label);
-  const result = await db((sb as any).from(t).select('*').range(0, limit - 1), label) as { data: AnyRow[] | null; error: any };
-  const data = result.data;
-  const error = result.error;
+  const { data, error } = await db((sb as any).from(t).select('*').range(0, limit - 1), label);
   if (error) throw new Error(`${label}: ${error.message}`);
   return (data ?? []) as AnyRow[];
 }
@@ -109,20 +106,23 @@ export async function getUserContext(): Promise<UserContext> {
   const uid = auth.user.id;
   const metadata = auth.user.user_metadata ?? {} as AnyRow;
   const appMetadata = auth.user.app_metadata ?? {} as AnyRow;
-  const profileResult = await db(
-    sb.from('profiles').select('*').eq('id', uid).maybeSingle(),
-    'Profil bilgisi'
-  ) as { data: AnyRow | null; error: any };
-  const roleRows = await db(
-    fetchRows(sb, TABLES.roles, 'Rol ve şube bilgisi', 1000),
-    'Rol ve şube bilgisi'
-  ) as AnyRow[];
-  const profile = profileResult.data;
-  const profileError = profileResult.error;
+  const [{ data: profile, error: profileError }, roleRows] = await Promise.all([
+    db(sb.from('profiles').select('*').eq('id', uid).maybeSingle(), 'Profil bilgisi'),
+    db(fetchRows(sb, TABLES.roles, 'Rol ve şube bilgisi', 1000), 'Rol ve şube bilgisi'),
+  ]);
   if (profileError) throw profileError;
-  const rows: AnyRow[] = roleRows.filter((r: AnyRow) => String(pick(r,['user_id','kullanici_id','kullanıcı_id'],'')) === uid);
+  const rows = roleRows.filter(r => String(pick(r,['user_id','kullanici_id','kullanıcı_id'],'')) === uid);
   const profileRecord = (profile ?? {}) as AnyRow;
   if (profileRecord.is_active === false || profileRecord.aktif === false) { await db(sb.auth.signOut(), 'Oturum kapatma'); throw new Error('Kullanıcı hesabı pasif.'); }
   const profileRole = text(profileRecord,['role','rol'], '');
   const metadataRole = text(appMetadata,['role'], '') || text(metadata,['role'], '');
-  const roleValues = [profileRole, metadataRole, ...rows.map(r => text(r,['role','rol','kullanici_rolu','kullanıcı_rolü']))];
+  const roleValues: string[] = [
+    profileRole,
+    metadataRole,
+    ...rows.map((r: AnyRow) => text(r, ['role', 'rol', 'kullanici_rolu', 'kullanıcı_rolü']))
+  ];
+  const superAdminRole = roleValues.find((value: string) => isSuperAdmin(value));
+  const adminRow = rows.find((r: AnyRow) => isAdminRole(text(r, ['role', 'rol'])));
+  const role = superAdminRole || profileRole || (adminRow ? text(adminRow, ['role', 'rol']) : '') || (rows.length ? text(rows[0], ['role', 'rol']) : '') || metadataRole || null;
+  const superAdmin = isSuperAdmin(role);
+  const companyId = superAdmin ? null : (text(profileRecord,['company_id','şirket_id','sirket_id','işletme_id','isletme_id'],'') || text(rows[0] ?? {},['company_id','şirket_id','sirket_id','işletme_id','isletme_id'],'') || text(metadata,['company_id'],'' ) || null);
