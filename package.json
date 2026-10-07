@@ -1,7 +1,7 @@
 {
   "name": "kasa-pro-v19",
   "private": true,
-  "version": "19.27.0",
+  "version": "19.28.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,18 +10,17 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.0",
-    "html5-qrcode": "^2.3.8",
     "lucide-react": "^0.468.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-router-dom": "^7.9.1",
-    "recharts": "^3.2.1"
+    "recharts": "^3.2.1",
+    "html5-qrcode": "^2.3.8"
   },
   "devDependencies": {
     "@types/react": "^19.1.13",
     "@types/react-dom": "^19.1.9",
     "@vitejs/plugin-react": "^5.0.4",
-    "supabase": "^2.120.0",
     "typescript": "^5.9.2",
     "vite": "^7.1.7"
   }
