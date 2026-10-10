@@ -14,9 +14,7 @@ async function withTimeout<T>(promiseLike: PromiseLike<T>, label: string, timeou
   }
 }
 
-async function db(promiseLike: PromiseLike<any>, label: string, timeoutMs = DB_TIMEOUT_MS): Promise<any> {
-  return withTimeout<any>(promiseLike, label, timeoutMs);
-}
+const db = <T,>(promiseLike: PromiseLike<T>, label: string, timeoutMs = DB_TIMEOUT_MS): Promise<T> => withTimeout<T>(promiseLike, label, timeoutMs);
 type AnySupabase = NonNullable<typeof supabase>;
 type AnyRow = Record<string, any>;
 
@@ -33,6 +31,9 @@ export type UserContext = {
 };
 
 const TABLES = {
+  // The live V19 SQL layer supports both the original Turkish table names and
+  // the newer English app_* names. Read paths must use the same compatibility
+  // order so an empty migration table never hides the real historical data.
   profiles: ['profiles'],
   roles: ['kullanıcı_şubesi_rolleri', 'kullanici_subesi_rolleri', 'user_branch_roles'],
   companies: ['şirketler', 'sirketler', 'companies'],
@@ -51,10 +52,18 @@ const tableCache = new Map<string, string>();
 export const normalize = (value: unknown) => String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('tr-TR').trim();
 export const isIncome = (value: unknown) => ['gelir', 'income', 'tahsilat'].includes(normalize(value));
 export const money = (n: number) => Number(n || 0).toLocaleString('tr-TR', { style: 'currency', currency: 'TRY', maximumFractionDigits: 2 });
-export const isSuperAdmin = (role: string | null | undefined, ..._compat: unknown[]) => ['super_admin','superadmin','platform_admin','superadministrator','super_adminstrator'].includes(normalize(role).replace(/[\s-]+/g, '_'));
-export const isAdminRole = (role: string | null | undefined, ..._compat: unknown[]) => { const r = normalize(role).replace(/ /g, '_'); return isSuperAdmin(role) || ['admin','administrator','company_admin','companyadmin','branch_admin','branchadmin','yonetici','yönetici'].includes(r) || r.startsWith('admin_'); };
-export const isCompanyAdmin = (role: string | null | undefined, ..._compat: unknown[]) => { const r = normalize(role).replace(/ /g, '_'); return isSuperAdmin(role) || ['company_admin','companyadmin','admin','administrator'].includes(r); };
-export const isBranchAdmin = (role: string | null | undefined, ..._compat: unknown[]) => ['branch_admin','branchadmin'].includes(normalize(role).replace(/ /g, '_'));
+export const normalizeRoleKey = (role: string | null | undefined) => normalize(role).replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+const SUPER_ADMIN_EMAILS = new Set(['ilhanesin1@gmail.com']);
+export const isSuperAdmin = (role: string | null | undefined, email?: string | null) => {
+  const normalizedEmail = String(email ?? '').trim().toLowerCase();
+  if (normalizedEmail && SUPER_ADMIN_EMAILS.has(normalizedEmail)) return true;
+  const r = normalizeRoleKey(role);
+  return ['super_admin','superadmin','platform_admin','superadministrator','super_adminstrator','super_admin_role','root_admin'].includes(r)
+    || /^super_?admin(?:_?istrator)?$/.test(r);
+};
+export const isAdminRole = (role: string | null | undefined) => { const r = normalize(role).replace(/ /g, '_'); return isSuperAdmin(role) || ['admin','administrator','company_admin','companyadmin','branch_admin','branchadmin','yonetici','yönetici'].includes(r) || r.startsWith('admin_'); };
+export const isCompanyAdmin = (role: string | null | undefined) => { const r = normalize(role).replace(/ /g, '_'); return isSuperAdmin(role) || ['company_admin','companyadmin','admin','administrator'].includes(r); };
+export const isBranchAdmin = (role: string | null | undefined) => ['branch_admin','branchadmin'].includes(normalize(role).replace(/ /g, '_'));
 
 function requireSupabase(): AnySupabase {
   if (!supabase) throw new Error('Supabase bağlantısı yapılandırılmamış. .env dosyasındaki VITE_SUPABASE_URL ve VITE_SUPABASE_PUBLISHABLE_KEY değerlerini kontrol edin.');
@@ -73,27 +82,104 @@ async function resolveTable(sb: AnySupabase, candidates: readonly string[], labe
   const cacheKey = candidates.join('|');
   const cached = tableCache.get(cacheKey);
   if (cached) return cached;
+  let lastMissing = '';
   for (const name of candidates) {
-    const { error } = await db((sb as any).from(name).select('*', { head: true, count: 'exact' }), `${label} bağlantısı`, 7000);
-    if (!error) { tableCache.set(cacheKey, name); return name; }
-    const code = String(error.code ?? '');
-    const message = String(error.message ?? '').toLowerCase();
-    const notFound = code === 'PGRST205' || code === '42P01' || message.includes('does not exist') || message.includes('could not find the table');
-    if (!notFound) throw new Error(`${label}: ${error.message}`);
+    try {
+      const result = await db((sb as any).from(name).select('*', { head: true, count: 'exact' }), `${label} bağlantısı`, 7000);
+      const error = result?.error;
+      if (!error) { tableCache.set(cacheKey, name); return name; }
+      const code = String(error.code ?? '');
+      const message = String(error.message ?? '').toLowerCase();
+      const notFound = code === 'PGRST205' || code === '42P01' || message.includes('does not exist') || message.includes('could not find the table') || message.includes('schema cache');
+      if (notFound) { lastMissing = String(error.message ?? ''); continue; }
+      throw new Error(`${label}: ${error.message}`);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      const lower = message.toLowerCase();
+      if (lower.includes('could not find the table') || lower.includes('schema cache') || lower.includes('does not exist')) { lastMissing = message; continue; }
+      throw e;
+    }
   }
-  throw new Error(`${label} tablosu bulunamadı. Aranan tablolar: ${candidates.join(', ')}`);
+  throw new Error(`${label} tablosu bulunamadı. Denenen tablolar: ${candidates.join(', ')}${lastMissing ? ` · Son hata: ${lastMissing}` : ''}`);
+}
+
+function datasetForCandidates(candidates: readonly string[]): string | null {
+  const signature = candidates.join('|');
+  const keys: Record<string, string> = {
+    profiles: 'profiles', roles: 'roles', companies: 'companies', branches: 'branches',
+    transactions: 'transactions', invoices: 'invoices', invoicePayments: 'invoice_payments',
+    cari: 'cari', permissions: 'permissions', notifications: 'notifications', posmist: 'posmist',
+  };
+  for (const [key, values] of Object.entries(TABLES)) {
+    if (values.join('|') === signature) return keys[key] ?? null;
+  }
+  return null;
+}
+
+function isMissingRpc(error: AnyRow): boolean {
+  const code = String(error?.code ?? '');
+  const message = String(error?.message ?? '').toLowerCase();
+  return ['PGRST202', 'PGRST203', '42883'].includes(code)
+    || message.includes('could not find the function')
+    || message.includes('v19 veri kaynağı bulunamadı')
+    || message.includes('kasa_v19_dataset_not_found')
+    || message.includes('could not find the table')
+    || message.includes('schema cache');
 }
 
 async function fetchRows(sb: AnySupabase, candidates: readonly string[], label: string, limit = 5000): Promise<AnyRow[]> {
+  // A narrowly allow-listed SQL RPC can read the actual table even when PostgREST
+  // has not refreshed its table cache. SECURITY INVOKER keeps normal grants and RLS.
+  const dataset = datasetForCandidates(candidates);
+  if (dataset) {
+    try {
+      const rpc = await db((sb as any).rpc('kasa_v19_read_rows', {
+        p_dataset: dataset, p_limit: Math.max(0, Math.min(limit, 10000)), p_offset: 0,
+      }), `${label} (RPC veri okuma)`);
+      if (!rpc.error) {
+        if (Array.isArray(rpc.data)) return rpc.data as AnyRow[];
+        throw new Error(`${label}: veri RPC'si geçerli bir liste döndürmedi.`);
+      }
+      if (!isMissingRpc(rpc.error)) throw new Error(`${label}: ${rpc.error.message}`);
+    } catch (e) {
+      const message = e instanceof Error ? e.message.toLowerCase() : String(e).toLowerCase();
+      // Only fall back for missing RPC/table/schema-cache cases. Do not suppress
+      // permission, RLS, or other database errors.
+      const canFallback = message.includes('could not find the function')
+        || message.includes('v19 veri kaynağı bulunamadı')
+        || message.includes('kasa_v19_dataset_not_found')
+        || message.includes('could not find the table')
+        || message.includes('schema cache')
+        || message.includes('pgrst202') || message.includes('pgrst203')
+        || message.includes('42883');
+      if (!canFallback) throw e;
+    }
+  }
+
+  // Compatibility path if the migration has not been applied yet.
   const t = await resolveTable(sb, candidates, label);
-  const { data, error } = await db((sb as any).from(t).select('*').range(0, limit - 1), label);
-  if (error) throw new Error(`${label}: ${error.message}`);
-  return (data ?? []) as AnyRow[];
+  const pageSize = 500;
+  const rows: AnyRow[] = [];
+  let from = 0;
+  let total: number | null = null;
+  while (rows.length < limit) {
+    const to = Math.min(from + pageSize - 1, limit - 1);
+    const result = await db((sb as any).from(t).select('*', { count: 'exact' }).range(from, to), label);
+    if (result.error) throw new Error(`${label}: ${result.error.message}`);
+    const page = (result.data ?? []) as AnyRow[];
+    rows.push(...page);
+    if (typeof result.count === 'number') total = result.count;
+    if (!page.length) break;
+    from += page.length;
+    if (total !== null && from >= Math.min(total, limit)) break;
+    if (page.length < pageSize && total === null) break;
+  }
+  return rows.slice(0, limit);
 }
 
 function filterRowsByUserBranch(rows: AnyRow[], user: UserContext) {
   // SUPER_ADMIN kapsam seçmişse artık tüm kayıtları döndürme; seçilen işletme/şubeyi uygula.
-  if (isSuperAdmin(user.role) && !user.companyId && !user.branchIds.length) return rows;
+  if (isSuperAdmin(user.role, user.email) && !user.companyId && !user.branchIds.length) return rows;
   if (user.branchIds.length) return rows.filter(r => { const bid = uuid(r,['branch_id','şube_id','sube_id']); return !bid || user.branchIds.includes(bid); });
   if (user.companyId) return rows.filter(r => { const cid = uuid(r,['company_id','şirket_id','sirket_id','işletme_id','isletme_id']); return !cid || cid === user.companyId; });
   return rows;
@@ -101,171 +187,40 @@ function filterRowsByUserBranch(rows: AnyRow[], user: UserContext) {
 
 export async function getUserContext(): Promise<UserContext> {
   const sb = requireSupabase();
-  const { data: auth, error: authError } = await db(
-    sb.auth.getUser(),
-    'Oturum bilgisi'
-  );
-
+  const { data: auth, error: authError } = await db(sb.auth.getUser(), 'Oturum bilgisi');
   if (authError || !auth.user) throw new Error('Oturum bulunamadı.');
-
   const uid = auth.user.id;
-  const metadata = (auth.user.user_metadata ?? {}) as AnyRow;
-  const appMetadata = (auth.user.app_metadata ?? {}) as AnyRow;
-
-  let profile: AnyRow | null = null;
-  try {
-    const result = await db(
-      sb.from('profiles').select('*').eq('id', uid).maybeSingle(),
-      'Profil bilgisi'
-    );
-    if (!result.error) profile = (result.data ?? null) as AnyRow | null;
-  } catch {
-    // Auth session geçerli; profil okunamasa da devam.
-  }
-
-  let roleRows: AnyRow[] = [];
-  try {
-    roleRows = await fetchRows(
-      sb,
-      TABLES.roles,
-      'Rol ve şube bilgisi',
-      1000
-    );
-  } catch {
-    roleRows = [];
-  }
-
-  const rows = roleRows.filter(
-    (r: AnyRow) =>
-      String(
-        pick(r, ['user_id', 'kullanici_id', 'kullanıcı_id'], '')
-      ) === uid
-  );
-
+  const metadata = auth.user.user_metadata ?? {} as AnyRow;
+  const appMetadata = auth.user.app_metadata ?? {} as AnyRow;
+  const [{ data: profile, error: profileError }, roleRows] = await Promise.all([
+    db(sb.from('profiles').select('*').eq('id', uid).maybeSingle(), 'Profil bilgisi'),
+    db(fetchRows(sb, TABLES.roles, 'Rol ve şube bilgisi', 1000), 'Rol ve şube bilgisi'),
+  ]);
+  if (profileError) throw profileError;
+  const rows = roleRows.filter(r => String(pick(r,['user_id','kullanici_id','kullanıcı_id'],'')) === uid);
   const profileRecord = (profile ?? {}) as AnyRow;
-
-  if (
-    profileRecord.is_active === false ||
-    profileRecord.aktif === false
-  ) {
-    await db(sb.auth.signOut(), 'Oturum kapatma');
-    throw new Error('Kullanıcı hesabı pasif.');
-  }
-
-  const profileRole = text(profileRecord, ['role', 'rol'], '');
-  const metadataRole =
-    text(appMetadata, ['role'], '') ||
-    text(metadata, ['role'], '');
-
-  const roleValues: string[] = [
-    profileRole,
-    metadataRole,
-    ...rows.map((r: AnyRow) =>
-      text(r, ['role', 'rol', 'kullanici_rolu', 'kullanıcı_rolü'])
-    ),
-  ];
-
-  const superAdminRole = roleValues.find((value) => isSuperAdmin(value));
-  const adminRow = rows.find((r: AnyRow) =>
-    isAdminRole(text(r, ['role', 'rol']))
-  );
-
-  const role =
-    superAdminRole ||
-    profileRole ||
-    (adminRow ? text(adminRow, ['role', 'rol']) : '') ||
-    (rows.length ? text(rows[0], ['role', 'rol']) : '') ||
-    metadataRole ||
-    '';
-
-  const superAdmin = isSuperAdmin(role);
-
-  const companyId = superAdmin
-    ? null
-    : (
-        text(
-          profileRecord,
-          ['company_id','şirket_id','sirket_id','işletme_id','isletme_id'],
-          ''
-        ) ||
-        text(
-          rows[0] ?? {},
-          ['company_id','şirket_id','sirket_id','işletme_id','isletme_id'],
-          ''
-        ) ||
-        text(metadata, ['company_id'], '') ||
-        null
-      );
-
-  const branchIds: string[] = superAdmin
-    ? []
-    : Array.from(
-        new Set(
-          rows
-            .map((r: AnyRow) =>
-              uuid(r, ['branch_id', 'şube_id', 'sube_id'])
-            )
-            .filter((value): value is string => Boolean(value))
-        )
-      );
-
+  if (profileRecord.is_active === false || profileRecord.aktif === false) { await db(sb.auth.signOut(), 'Oturum kapatma'); throw new Error('Kullanıcı hesabı pasif.'); }
+  const profileRole = text(profileRecord,['role','rol','user_role','kullanici_rolu','kullanıcı_rolü','account_role'], '');
+  const metadataRole = text(appMetadata,['role','user_role','kullanici_rolu','kullanıcı_rolü'], '') || text(metadata,['role','user_role','kullanici_rolu','kullanıcı_rolü'], '');
+  const roleValues = [profileRole, metadataRole, ...rows.map(r => text(r,['role','rol','user_role','kullanici_rolu','kullanıcı_rolü','account_role']))];
+  // UI role detection also asks the database's authoritative SUPER_ADMIN function.
+  // This prevents the UI from showing a restricted scope when the role is stored in a legacy/alternate field.
+  const [superRpc, legacySuperRpc] = await Promise.all([
+    sb.rpc('v19_is_super_admin'),
+    sb.rpc('is_super_admin'),
+  ]);
+  const detectedSuperAdmin = isSuperAdmin(profileRole, auth.user.email) || isSuperAdmin(metadataRole, auth.user.email) || roleValues.some(r => isSuperAdmin(r)) || superRpc.data === true || legacySuperRpc.data === true;
+  const role = detectedSuperAdmin || String(auth.user.email ?? '').trim().toLowerCase() === 'ilhanesin1@gmail.com' ? 'SUPER_ADMIN' : (profileRole || rows.find(r => isAdminRole(text(r,['role','rol','user_role','kullanici_rolu','kullanıcı_rolü'])))?.role || rows[0]?.role || metadataRole || null);
+  const superAdmin = isSuperAdmin(String(role ?? ''), auth.user.email);
+  const companyId = superAdmin ? null : (text(profileRecord,['company_id','şirket_id','sirket_id','işletme_id','isletme_id'],'') || text(rows[0] ?? {},['company_id','şirket_id','sirket_id','işletme_id','isletme_id'],'') || text(metadata,['company_id'],'' ) || null);
+  const branchIds = superAdmin ? [] : [...new Set(rows.map(r => uuid(r,['branch_id','şube_id','sube_id'])).filter(Boolean) as string[])];
   let branchNames: string[] = [];
   if (branchIds.length || companyId) {
-    try {
-      const branchRows = await fetchRows(
-        sb,
-        TABLES.branches,
-        'Şube bilgileri',
-        3000
-      );
-
-      const allowed = branchRows.filter((r: AnyRow) =>
-        branchIds.length
-          ? branchIds.includes(String(pick(r, ['id'], '')))
-          : String(
-              pick(
-                r,
-                ['company_id','şirket_id','sirket_id','işletme_id','isletme_id'],
-                ''
-              )
-            ) === String(companyId)
-      );
-
-      branchNames = allowed.map((r: AnyRow) =>
-        text(
-          r,
-          ['name','şube_adi','sube_adi','ad','isim','branch_name'],
-          'Şube'
-        )
-      );
-    } catch {
-      branchNames = [];
-    }
+    const branchRows = await fetchRows(sb, TABLES.branches, 'Şube bilgileri', 3000);
+    const allowed = branchRows.filter(r => branchIds.length ? branchIds.includes(String(pick(r,['id'],''))) : String(pick(r,['company_id','şirket_id','sirket_id','işletme_id','isletme_id'],'')) === String(companyId));
+    branchNames = allowed.map(r => text(r,['name','şube_adi','sube_adi','ad','isim','branch_name'],'Şube'));
   }
-
-  return {
-    id: uid,
-    username: text(
-      profileRecord,
-      ['username','kullanici_adi'],
-      text(metadata, ['username'], '')
-    ),
-    fullName: text(
-      profileRecord,
-      ['full_name','ad_soyad'],
-      text(metadata, ['full_name'], auth.user.email ?? '')
-    ),
-    email: text(
-      profileRecord,
-      ['email','e_posta','eposta'],
-      auth.user.email ?? ''
-    ),
-    companyId,
-    role: String(role),
-    branchIds,
-    branchNames,
-    phone: text(profileRecord, ['phone','telefon'], ''),
-  };
+  return { id: uid, username: text(profileRecord,['username','kullanici_adi'], text(metadata,['username'],'')), fullName: text(profileRecord,['full_name','ad_soyad'], text(metadata,['full_name'], auth.user.email ?? '')), email: text(profileRecord,['email','e_posta','eposta'], auth.user.email ?? ''), companyId, role: String(role ?? ''), branchIds, branchNames, phone: text(profileRecord,['phone','telefon'],'') };
 }
 
 export async function loginWithUsername(username: string, password: string) {
@@ -287,7 +242,6 @@ export async function loginWithUsername(username: string, password: string) {
   if (error || !data.session) throw new Error(error?.message || 'Kullanıcı/e-posta veya şifre hatalı.');
   const { data: verified } = await db(sb.auth.getSession(), 'Oturum doğrulama');
   if (!verified.session?.user) throw new Error('Giriş tamamlandı ancak oturum doğrulanamadı.');
-  await new Promise((resolve) => setTimeout(resolve, 50));
 }
 
 export async function registerUser(input:{username:string;fullName:string;email:string;password:string}) {
@@ -299,7 +253,7 @@ export async function registerUser(input:{username:string;fullName:string;email:
 }
 
 export type DashboardData={incomeToday:number;expenseToday:number;netToday:number;totalNet:number;invoiceTotal:number;activeBranches:number;chart:{d:string;g:number;c:number}[];branches:{id:string;name:string;city:string;balance:number}[];transactions:ModuleTransaction[];user:UserContext};
-export type ModuleTransaction={id:string;title:string;branch:string;category:string;date:string;amount:number;type:'income'|'expense';userName:string;branchId?:string};
+export type ModuleTransaction={id:string;title:string;branch:string;category:string;date:string;dateKey:string;amount:number;type:'income'|'expense';userName:string;branchId?:string};
 export type ModuleBranch={id:string;name:string;city:string;is_active:boolean;balance:number};
 export type TransactionInput={branchId:string;type:'Gelir'|'Gider';amount:number;description:string;date:string};
 export type InvoiceRow=Record<string,unknown>&{id:string};
@@ -317,53 +271,30 @@ async function normalizedTransactions(user:UserContext, limit=5000) {
   }));
 }
 
-async function resolveUserNames(ids:string[]) { const sb=requireSupabase(); const uniq=[...new Set(ids.filter(Boolean))]; const map=new Map<string,string>(); if(!uniq.length)return map; const rows=await fetchRows(sb,TABLES.profiles,'İşlem kullanıcıları',5000); for(const r of rows){const id=text(r,['id']);if(uniq.includes(id))map.set(id,text(r,['username','kullanici_adi','full_name','ad_soyad','email'],'—'));} return map; }
+async function resolveUserNames(ids:string[]) { const sb=requireSupabase(); const uniq=[...new Set(ids.filter(Boolean))]; const map=new Map<string,string>(); if(!uniq.length)return map; try{const rows=await fetchRows(sb,TABLES.profiles,'İşlem kullanıcıları',5000); for(const r of rows){const id=text(r,['id']);if(uniq.includes(id))map.set(id,text(r,['username','kullanici_adi','full_name','ad_soyad','email'],'—'));}}catch{/* Profil RLS'si işlemler ekranını kilitlememeli; kayıt içindeki kullanıcı alanı kullanılacak. */} return map; }
 
 export async function loadDashboard(user:UserContext):Promise<DashboardData>{
-  const [tx,branches]=await Promise.all([normalizedTransactions(user,5000),loadModuleBranches(user)]); const today=new Date(); const todayKey=localDateKey(today); const start=new Date(today.getFullYear(),today.getMonth(),today.getDate()); const seven=new Date(start); seven.setDate(seven.getDate()-6); const map=new Map<string,{g:number;c:number}>(); for(let i=0;i<7;i++){const d=new Date(seven);d.setDate(seven.getDate()+i);map.set(localDateKey(d),{g:0,c:0});}
+  const [tx,branches,invoices]=await Promise.all([normalizedTransactions(user,5000),loadModuleBranches(user),loadInvoices(user)]); const today=new Date(); const todayKey=localDateKey(today); const start=new Date(today.getFullYear(),today.getMonth(),today.getDate()); const seven=new Date(start); seven.setDate(seven.getDate()-6); const map=new Map<string,{g:number;c:number}>(); for(let i=0;i<7;i++){const d=new Date(seven);d.setDate(seven.getDate()+i);map.set(localDateKey(d),{g:0,c:0});}
   let incomeToday=0,expenseToday=0,totalNet=0; for(const r of tx){const a=r.miktar;const inc=isIncome(r.tur);const key=localDateKey(r.tarih||r.islem_zamani);if(key===todayKey){if(inc)incomeToday+=a;else expenseToday+=a;}const p=map.get(key);if(p){if(inc)p.g+=a/1000;else p.c+=a/1000;}totalNet+=inc?a:-a;}
-  const ids=tx.slice(0,20).map(r=>r.created_by||''); const names=await resolveUserNames(ids); const branchMap=new Map(branches.map(b=>[b.id,b])); const recent:ModuleTransaction[]=tx.slice(0,8).map(r=>({id:r.id,title:r.aciklama||(isIncome(r.tur)?'Gelir işlemi':'Gider işlemi'),branch:r.sube||branchMap.get(r.branch_id)?.name||'Şube',category:r.tur,date:formatDate(r.islem_zamani||r.tarih),amount:r.miktar,type:isIncome(r.tur)?'income':'expense',userName:names.get(String(r.created_by||''))||r.kullanici||'—'}));
+  const ids=tx.slice(0,20).map(r=>r.created_by||''); const names=await resolveUserNames(ids); const branchMap=new Map(branches.map(b=>[b.id,b])); const recent:ModuleTransaction[]=tx.slice(0,8).map(r=>({id:r.id,title:r.aciklama||(isIncome(r.tur)?'Gelir işlemi':'Gider işlemi'),branch:r.sube||branchMap.get(r.branch_id)?.name||'Şube',category:r.tur,date:formatDate(r.islem_zamani||r.tarih),dateKey:localDateKey(r.tarih||r.islem_zamani),amount:r.miktar,type:isIncome(r.tur)?'income':'expense',userName:names.get(String(r.created_by||''))||r.kullanici||'—',branchId:r.branch_id}));
   const balances=new Map<string,number>(); for(const r of tx)balances.set(r.branch_id,(balances.get(r.branch_id)||0)+(isIncome(r.tur)?r.miktar:-r.miktar));
-  let invoiceTotal = 0;
-  try {
-    const invoices = await loadInvoices(user);
-    invoiceTotal = invoices.reduce((sum, invoice) => sum + num(invoice as AnyRow, ['miktar','genel_toplam','grand_total','total','tutar','amount']), 0);
-  } catch {
-    // Invoice table/RLS is independent from the dashboard core.
-  }
+  const invoiceTotal=invoices.reduce((sum,r)=>sum+Number(r.miktar??r.genel_toplam??r.total??0),0);
   return {incomeToday,expenseToday,netToday:incomeToday-expenseToday,totalNet,invoiceTotal,activeBranches:branches.length,chart:[...map.entries()].map(([d,v])=>({d:d.slice(8,10),g:Math.round(v.g),c:Math.round(v.c)})),branches:branches.map(b=>({id:b.id,name:b.name,city:b.city,balance:balances.get(b.id)||0})),transactions:recent,user};
 }
 
-export async function loadModuleTransactions(user: UserContext): Promise<ModuleTransaction[]> {
-  const tx = await normalizedTransactions(user, 7000);
-  const branches = await loadModuleBranches(user);
-  const map = new Map(branches.map((b) => [b.id, b.name]));
-  const names = await resolveUserNames(tx.map((r) => r.created_by || ''));
+export async function loadModuleTransactions(user:UserContext):Promise<ModuleTransaction[]>{const tx=await normalizedTransactions(user,7000);const branches=await loadModuleBranches(user);const map=new Map(branches.map(b=>[b.id,b.name]));const names=await resolveUserNames(tx.map(r=>r.created_by||'')); return tx.sort((a,b)=>String(b.islem_zamani||b.tarih).localeCompare(String(a.islem_zamani||a.tarih))).map(r=>({id:r.id,title:r.aciklama||(isIncome(r.tur)?'Gelir işlemi':'Gider işlemi'),branch:r.sube||map.get(r.branch_id)||'Şube',category:r.tur,date:formatDate(r.islem_zamani||r.tarih),dateKey:localDateKey(r.tarih||r.islem_zamani),amount:r.miktar,type:(isIncome(r.tur)?'income':'expense') as 'income'|'expense',userName:names.get(String(r.created_by||''))||r.kullanici||'—',branchId:r.branch_id}));}
 
-  return tx
-    .sort((a, b) =>
-      String(b.islem_zamani || b.tarih).localeCompare(
-        String(a.islem_zamani || a.tarih)
-      )
-    )
-    .map((r): ModuleTransaction => ({
-      id: r.id,
-      title: r.aciklama || (isIncome(r.tur) ? 'Gelir işlemi' : 'Gider işlemi'),
-      branch: r.sube || map.get(r.branch_id) || 'Şube',
-      category: r.tur,
-      date: formatDate(r.islem_zamani || r.tarih),
-      amount: r.miktar,
-      type: isIncome(r.tur) ? 'income' : 'expense',
-      userName: names.get(String(r.created_by || '')) || r.kullanici || '—',
-      branchId: r.branch_id,
-    }));
+export async function loadModuleBranches(user:UserContext):Promise<ModuleBranch[]>{
+  const branchRows=await loadBranches(user);
+  const tx=await normalizedTransactions(user,7000);
+  const balances=new Map<string,number>();
+  for(const r of tx) balances.set(r.branch_id,(balances.get(r.branch_id)||0)+(isIncome(r.tur)?r.miktar:-r.miktar));
+  return branchRows.filter(r=>r.is_active).map(r=>({id:r.id,name:r.name,city:r.city||'',is_active:r.is_active,balance:balances.get(r.id)||0}));
 }
 
-export async function loadModuleBranches(user:UserContext):Promise<ModuleBranch[]>{const sb=requireSupabase();let rows=await fetchRows(sb,TABLES.branches,'Şube listesi',3000);rows=filterRowsByUserBranch(rows,user);if(user.companyId)rows=rows.filter(r=>String(pick(r,['company_id','şirket_id','sirket_id','işletme_id','isletme_id'],''))===user.companyId);const tx=await normalizedTransactions(user,7000);const balances=new Map<string,number>();for(const r of tx)balances.set(r.branch_id,(balances.get(r.branch_id)||0)+(isIncome(r.tur)?r.miktar:-r.miktar));return rows.filter(r=>bool(r,['is_active','aktif'],true)).map(r=>({id:text(r,['id']),name:text(r,['name','şube_adi','sube_adi','ad','isim','branch_name'],'Şube'),city:text(r,['city','şehir','sehir']),is_active:bool(r,['is_active','aktif'],true),balance:balances.get(text(r,['id']))||0}));}
-
-export async function createTransaction(input:TransactionInput,user:UserContext){const sb=requireSupabase();if(!input.branchId)throw new Error('Şube seçmelisiniz.');if(!(input.amount>0))throw new Error('Tutar 0’dan büyük olmalıdır.');const branches=await loadModuleBranches({...user,branchIds:[]});const branch=branches.find(b=>b.id===input.branchId);if(!branch)throw new Error('Şube bulunamadı veya erişiminiz yok.');const rpc=await db(sb.rpc('v19_create_transaction',{p_branch_id:input.branchId,p_branch_name:branch.name,p_type:input.type,p_amount:input.amount,p_description:input.description,p_date:input.date,p_user_id:user.id,p_user_name:user.fullName||user.username||user.email}),'İşlem kaydı');if(rpc.error)throw new Error(rpc.error.message);}
-export async function updateTransaction(id:string,input:TransactionInput,user:UserContext){const sb=requireSupabase();const branches=await loadModuleBranches({...user,branchIds:[]});const branch=branches.find(b=>b.id===input.branchId);if(!branch)throw new Error('Şube bulunamadı veya erişiminiz yok.');const rpc=await db(sb.rpc('v19_update_transaction',{p_id:id,p_branch_id:input.branchId,p_branch_name:branch.name,p_type:input.type,p_amount:input.amount,p_description:input.description,p_date:input.date,p_user_id:user.id}),'İşlem güncelleme');if(rpc.error)throw new Error(rpc.error.message);}
-export async function deleteTransaction(id:string){const sb=requireSupabase();const rpc=await db(sb.rpc('v19_soft_delete_transaction',{p_id:id}),'İşlem silme');if(rpc.error)throw new Error(rpc.error.message);}
+export async function createTransaction(input:TransactionInput,user:UserContext){const sb=requireSupabase();if(!input.branchId)throw new Error('Şube seçmelisiniz.');if(!(input.amount>0))throw new Error('Tutar 0’dan büyük olmalıdır.');const branches=await loadModuleBranches({...user,branchIds:[]});const branch=branches.find(b=>b.id===input.branchId);if(!branch)throw new Error('Şube bulunamadı veya erişiminiz yok.');const rpc=await db(sb.rpc('kasa_create_transaction_v24',{p_branch_id:input.branchId,p_branch_name:branch.name,p_type:input.type,p_amount:input.amount,p_description:input.description,p_date:input.date,p_user_id:user.id,p_user_name:user.fullName||user.username||user.email}),'İşlem kaydı');if(rpc.error)throw new Error(rpc.error.message);}
+export async function updateTransaction(id:string,input:TransactionInput,user:UserContext){const sb=requireSupabase();const branches=await loadModuleBranches({...user,branchIds:[]});const branch=branches.find(b=>b.id===input.branchId);if(!branch)throw new Error('Şube bulunamadı veya erişiminiz yok.');const rpc=await db(sb.rpc('kasa_update_transaction_v24',{p_id:id,p_branch_id:input.branchId,p_branch_name:branch.name,p_type:input.type,p_amount:input.amount,p_description:input.description,p_date:input.date,p_user_id:user.id}),'İşlem güncelleme');if(rpc.error)throw new Error(rpc.error.message);}
+export async function deleteTransaction(id:string){const sb=requireSupabase();const rpc=await db(sb.rpc('kasa_delete_transaction_v24',{p_id:id,p_user_id:(await getUserContext()).id}),'İşlem silme');if(rpc.error)throw new Error(rpc.error.message);}
 
 const invoiceAliasPayload=(p:AnyRow)=>{const o={...p}; if(p.firma!==undefined)Object.assign(o,{firma:p.firma,company_name:p.firma,fatura_adi:p.firma,invoice_name:p.firma});if(p.seri_no!==undefined)Object.assign(o,{seri_no:p.seri_no,fatura_no:p.seri_no,invoice_number:p.seri_no});if(p.icerik!==undefined)Object.assign(o,{icerik:p.icerik,içerik:p.icerik});if(p.miktar!==undefined)Object.assign(o,{miktar:p.miktar,tutar:p.miktar,amount:p.miktar,genel_toplam:p.miktar});if(p.odenen!==undefined)Object.assign(o,{odenen:p.odenen,paid:p.odenen});if(p.kalan!==undefined)Object.assign(o,{kalan:p.kalan,remaining:p.kalan});if(p.fatura_notu!==undefined)Object.assign(o,{fatura_notu:p.fatura_notu,note:p.fatura_notu});if(p.tarih!==undefined)Object.assign(o,{tarih:p.tarih,date:p.tarih});if(p.vade_tarihi!==undefined)Object.assign(o,{vade_tarihi:p.vade_tarihi,due_date:p.vade_tarihi});if(p.fatura_durumu!==undefined)Object.assign(o,{fatura_durumu:p.fatura_durumu,invoice_status:p.fatura_durumu});return o;};
 export async function loadInvoices(user:UserContext){
@@ -377,9 +308,9 @@ export async function loadInvoices(user:UserContext){
   rows.sort((a,b)=>String(pick(b,['tarih','date','created_at'],'')).localeCompare(String(pick(a,['tarih','date','created_at'],''))));
   return rows as InvoiceRow[];
 }
-export async function createInvoice(input:AnyRow,user:UserContext){const sb=requireSupabase();const branchId=String(input.branch_id||'');const branches=await loadModuleBranches({...user,branchIds:[]});const branch=branches.find(b=>b.id===branchId);if(!branch)throw new Error('Şube bulunamadı.');const amount=Number(input.miktar??0);const paid=Number(input.odenen??0);const rpc=await db(sb.rpc('v19_create_invoice',{p_branch_id:branchId,p_branch_name:branch.name,p_firma:text(input,['firma','fatura_adi']),p_serial:text(input,['seri_no','fatura_no']),p_content:text(input,['icerik']),p_amount:amount,p_paid:paid,p_kdv:text(input,['kdv']),p_note:text(input,['fatura_notu']),p_date:String(input.tarih),p_due:input.vade_tarihi?String(input.vade_tarihi):null,p_status:text(input,['fatura_durumu'],'Açık'),p_currency:text(input,['para_birimi'],'TRY'),p_user_id:user.id,p_user_name:user.fullName||user.username||user.email}),'Fatura kaydı');if(rpc.error)throw new Error(rpc.error.message);}
-export async function updateInvoice(id:string,patch:AnyRow,user:UserContext){const sb=requireSupabase();const rpc=await db(sb.rpc('v19_update_invoice',{p_id:id,p_payload:invoiceAliasPayload(patch),p_user_id:user.id}),'Fatura güncelleme');if(rpc.error)throw new Error(rpc.error.message);}
-export async function deleteInvoice(id:string){const sb=requireSupabase();const rpc=await db(sb.rpc('v19_soft_delete_invoice',{p_id:id,p_user_id:(await getUserContext()).id}),'Fatura silme');if(rpc.error)throw new Error(rpc.error.message);}
+export async function createInvoice(input:AnyRow,user:UserContext){const sb=requireSupabase();const branchId=String(input.branch_id||'');const branches=await loadModuleBranches({...user,branchIds:[]});const branch=branches.find(b=>b.id===branchId);if(!branch)throw new Error('Şube bulunamadı.');const amount=Number(input.miktar??0);const paid=Number(input.odenen??0);const rpc=await db(sb.rpc('kasa_create_invoice_v24',{p_branch_id:branchId,p_branch_name:branch.name,p_firma:text(input,['firma','fatura_adi']),p_serial:text(input,['seri_no','fatura_no']),p_content:text(input,['icerik']),p_amount:amount,p_paid:paid,p_kdv:text(input,['kdv']),p_note:text(input,['fatura_notu']),p_date:String(input.tarih),p_due:input.vade_tarihi?String(input.vade_tarihi):null,p_status:text(input,['fatura_durumu'],'Açık'),p_currency:text(input,['para_birimi'],'TRY'),p_user_id:user.id,p_user_name:user.fullName||user.username||user.email}),'Fatura kaydı');if(rpc.error)throw new Error(rpc.error.message);}
+export async function updateInvoice(id:string,patch:AnyRow,user:UserContext){const sb=requireSupabase();const rpc=await db(sb.rpc('kasa_update_invoice_v24',{p_id:id,p_payload:invoiceAliasPayload(patch),p_user_id:user.id}),'Fatura güncelleme');if(rpc.error)throw new Error(rpc.error.message);}
+export async function deleteInvoice(id:string){const sb=requireSupabase();const rpc=await db(sb.rpc('kasa_delete_invoice_v24',{p_id:id,p_user_id:(await getUserContext()).id}),'Fatura silme');if(rpc.error)throw new Error(rpc.error.message);}
 export async function loadInvoicePayments(invoiceId:string){
   const rows=await fetchRows(requireSupabase(),TABLES.invoicePayments,'Fatura ödemeleri',3000);
   return rows
@@ -389,65 +320,148 @@ export async function loadInvoicePayments(invoiceId:string){
 export async function createInvoicePayment(input:{invoice_id:string;branch_id:string;miktar:number;tarih:string;tur:'Kasa'|'Kart';aciklama?:string},user:UserContext){if(input.tur!=='Kasa'&&input.tur!=='Kart')throw new Error('Yalnızca Kasa veya Kart kullanılabilir.');const sb=requireSupabase();const rpc=await db(sb.rpc('v19_record_invoice_payment',{p_invoice_id:input.invoice_id,p_branch_id:input.branch_id,p_amount:input.miktar,p_date:input.tarih,p_method:input.tur,p_user_id:user.id,p_user_name:user.fullName||user.username||user.email}),'Fatura ödemesi');if(rpc.error)throw new Error(rpc.error.message);}
 
 export async function loadCari(user:UserContext){let rows=await fetchRows(requireSupabase(),TABLES.cari,'Cari hesaplar',5000);rows=filterRowsByUserBranch(rows,user);return rows.filter(r=>!pick(r,['deleted_at','silindi_at'])) as CariRow[];}
-export async function createCari(input:{branch_id:string;firma:string;miktar:number;aciklama:string;tarih:string;islem_turu:'Alacak'|'Borç'},user:UserContext){const branches=await loadModuleBranches({...user,branchIds:[]});const branch=branches.find(b=>b.id===input.branch_id);if(!branch)throw new Error('Şube bulunamadı.');const signed=input.islem_turu==='Alacak'?Math.abs(input.miktar):-Math.abs(input.miktar);const rpc=await db(requireSupabase().rpc('v19_create_cari',{p_branch_id:input.branch_id,p_branch_name:branch.name,p_firma:input.firma,p_amount:signed,p_description:input.aciklama,p_date:input.tarih,p_user_id:user.id,p_user_name:user.fullName||user.username||user.email}),'Cari kaydı');if(rpc.error)throw new Error(rpc.error.message);}
-export async function updateCari(id:string,input:{branch_id:string;firma:string;miktar:number;aciklama:string;tarih:string;islem_turu:'Alacak'|'Borç'},user:UserContext){const signed=input.islem_turu==='Alacak'?Math.abs(input.miktar):-Math.abs(input.miktar);const rpc=await db(requireSupabase().rpc('v19_update_cari',{p_id:id,p_payload:{branch_id:input.branch_id,firma:input.firma,miktar:signed,tutar:signed,amount:signed,aciklama:input.aciklama,açıklama:input.aciklama,tarih:input.tarih,date:input.tarih},p_user_id:user.id}),'Cari güncelleme');if(rpc.error)throw new Error(rpc.error.message);}
-export async function deleteCari(id:string){const rpc=await db(requireSupabase().rpc('v19_soft_delete_cari',{p_id:id}),'Cari silme');if(rpc.error)throw new Error(rpc.error.message);}
+export async function createCari(input:{branch_id:string;firma:string;miktar:number;aciklama:string;tarih:string;islem_turu:'Alacak'|'Borç'},user:UserContext){const branches=await loadModuleBranches({...user,branchIds:[]});const branch=branches.find(b=>b.id===input.branch_id);if(!branch)throw new Error('Şube bulunamadı.');const signed=input.islem_turu==='Alacak'?Math.abs(input.miktar):-Math.abs(input.miktar);const rpc=await db(requireSupabase().rpc('kasa_create_cari_v24',{p_branch_id:input.branch_id,p_branch_name:branch.name,p_firma:input.firma,p_amount:signed,p_description:input.aciklama,p_date:input.tarih,p_user_id:user.id,p_user_name:user.fullName||user.username||user.email}),'Cari kaydı');if(rpc.error)throw new Error(rpc.error.message);}
+export async function updateCari(id:string,input:{branch_id:string;firma:string;miktar:number;aciklama:string;tarih:string;islem_turu:'Alacak'|'Borç'},user:UserContext){const signed=input.islem_turu==='Alacak'?Math.abs(input.miktar):-Math.abs(input.miktar);const rpc=await db(requireSupabase().rpc('kasa_update_cari_v24',{p_id:id,p_payload:{branch_id:input.branch_id,firma:input.firma,miktar:signed,tutar:signed,amount:signed,aciklama:input.aciklama,açıklama:input.aciklama,tarih:input.tarih,date:input.tarih},p_user_id:user.id}),'Cari güncelleme');if(rpc.error)throw new Error(rpc.error.message);}
+export async function deleteCari(id:string){const rpc=await db(requireSupabase().rpc('kasa_delete_cari_v24',{p_id:id,p_user_id:(await getUserContext()).id}),'Cari silme');if(rpc.error)throw new Error(rpc.error.message);}
 
 export type CompanyInput={name:string;tax_number?:string;phone?:string;email?:string;address?:string};
-export async function loadCompanies(user:UserContext):Promise<CompanyRow[]>{const sb=requireSupabase();if(isSuperAdmin(user.role)){const rpc=await db(sb.rpc('v19_get_companies'),'SUPER_ADMIN işletmeleri');if(rpc.error)throw rpc.error;return ((rpc.data??[]) as CompanyRow[]).map(r=>({...r,id:String(r.id)}));}let rows=await fetchRows(sb,TABLES.companies,'İşletmeler',3000);if(user.companyId)rows=rows.filter(r=>String(pick(r,['id'],''))===user.companyId);return rows.map(r=>({id:text(r,['id']),name:text(r,['name','şirket_adi','sirket_adi','işletme_adi','isletme_adi','ad','isim','firma'],'İşletme'),tax_number:text(r,['tax_number','vergi_no','vergi_numarasi','vergi_numarası'])||null,phone:text(r,['phone','telefon'])||null,email:text(r,['email','eposta','e_posta'])||null,address:text(r,['address','adres'])||null,is_active:bool(r,['is_active','aktif'],true)}));}
-export async function createCompany(input:CompanyInput){const rpc=await db(requireSupabase().rpc('v19_create_company',{p_name:input.name,p_tax_number:input.tax_number||null,p_phone:input.phone||null,p_email:input.email||null,p_address:input.address||null}),'İşletme kaydı');if(rpc.error)throw new Error(rpc.error.message);return String(rpc.data);}
-export async function deleteCompany(id:string, ..._compat: unknown[]) {
-  const currentUser = await getUserContext();
-  const companies = await loadCompanies(currentUser);
-  const row = companies.find((company) => company.id === id);
-  if (!row) throw new Error('İşletme bulunamadı.');
-  await updateCompany(id, { ...row, is_active: false });
-}
+export async function loadCompanies(user:UserContext):Promise<CompanyRow[]> {
+  const sb=requireSupabase();
+  const mapRows=(rows:AnyRow[])=>rows.map(r=>({id:text(r,['id','company_id','şirket_id','sirket_id','işletme_id','isletme_id']),name:text(r,['name','şirket_adi','sirket_adi','işletme_adi','isletme_adi','ad','isim','firma','company_name','unvan','ticari_unvan','ticari_unvanı'],'İşletme'),tax_number:text(r,['tax_number','vergi_no','vergi_numarasi','vergi_numarası'])||null,phone:text(r,['phone','telefon'])||null,email:text(r,['email','eposta','e_posta'])||null,address:text(r,['address','adres'])||null,is_active:bool(r,['is_active','aktif'],true)})).filter(r=>r.id);
+  if(isSuperAdmin(user.role, user.email)){
+    try { const rpc=await db(sb.rpc('v19_get_companies'),'SUPER_ADMIN işletmeleri'); if(!rpc.error&&Array.isArray(rpc.data)&&(rpc.data as AnyRow[]).length) return mapRows(rpc.data as AnyRow[]); } catch {}
+    try { const rpc=await db(sb.rpc('get_superadmin_companies'),'SUPER_ADMIN işletmeleri yedek'); if(!rpc.error&&Array.isArray(rpc.data)&&(rpc.data as AnyRow[]).length) return mapRows(rpc.data as AnyRow[]); } catch {}
+  }
+  try {
+    let rows=await fetchRows(sb,TABLES.companies,'İşletmeler',5000);
+    if(user.companyId)rows=rows.filter(r=>String(pick(r,['id','company_id','şirket_id','sirket_id','işletme_id','isletme_id'],''))===user.companyId);
+    const mapped=mapRows(rows);
+    if(mapped.length) return mapped;
+  } catch (error) {
+    const message=(error instanceof Error?error.message:String(error)).toLowerCase();
+    const missingTable=message.includes('dataset_not_found')||message.includes('tablosu bulunamadı')||message.includes('could not find the table')||message.includes('schema cache')||message.includes('does not exist');
+    if(!missingTable) throw error;
+  }
 
-export async function updateCompany(id:string,patch:Partial<CompanyRow>){const rpc=await db(requireSupabase().rpc('v19_update_company',{p_id:id,p_name:patch.name??'',p_tax_number:patch.tax_number??null,p_phone:patch.phone??null,p_email:patch.email??null,p_address:patch.address??null,p_is_active:patch.is_active??true}),'İşletme güncelleme');if(rpc.error)throw new Error(rpc.error.message);}
-export async function loadBranches(user:UserContext):Promise<BranchRow[]>{if(isSuperAdmin(user.role)){const rpc=await db(requireSupabase().rpc('v19_get_branches'),'SUPER_ADMIN şubeleri');if(rpc.error)throw rpc.error;return ((rpc.data??[]) as BranchRow[]).map(r=>({...r,id:String(r.id),company_id:String(r.company_id)}));}let rows=await fetchRows(requireSupabase(),TABLES.branches,'Şubeler',3000);rows=filterRowsByUserBranch(rows,user);return rows.map(r=>({id:text(r,['id']),company_id:text(r,['company_id','şirket_id','sirket_id','işletme_id','isletme_id']),name:text(r,['name','şube_adi','sube_adi','ad','isim','branch_name'],'Şube'),code:text(r,['code','kod'])||null,phone:text(r,['phone','telefon'])||null,email:text(r,['email','eposta','e_posta'])||null,address:text(r,['address','adres'])||null,city:text(r,['city','şehir','sehir'])||null,district:text(r,['district','ilçe','ilce'])||null,latitude:Number(pick(r,['latitude','enlem'],NaN))||null,longitude:Number(pick(r,['longitude','boylam'],NaN))||null,is_active:bool(r,['is_active','aktif'],true)}));}
+  // This live database may store company IDs on branches/user_branch_roles without
+  // a separate companies table. Build a read-only list from those real relations.
+  // No synthetic company IDs are created and no database writes are performed.
+  const [branchRows, roleRows]=await Promise.all([
+    fetchRows(sb,TABLES.branches,'İşletme kapsamı için şubeler',5000),
+    fetchRows(sb,TABLES.roles,'İşletme kapsamı için kullanıcı rolleri',5000),
+  ]);
+  const byId=new Map<string,CompanyRow>();
+  for(const row of [...branchRows,...roleRows]){
+    const id=text(row,['company_id','şirket_id','sirket_id','işletme_id','isletme_id','companyid']);
+    if(!id) continue;
+    if(user.companyId && id!==user.companyId) continue;
+    const label=text(row,['company_name','company_label','business_name','şirket_adi','sirket_adi','işletme_adi','isletme_adi','firma_adi','ticari_unvan','ticari_unvanı']);
+    const prior=byId.get(id);
+    if(!prior){
+      byId.set(id,{
+        id,
+        name:label||`İşletme ${id.slice(0,8)}`,
+        tax_number:text(row,['tax_number','vergi_no','vergi_numarasi','vergi_numarası'])||null,
+        phone:text(row,['company_phone','telefon'])||null,
+        email:text(row,['company_email','email','eposta','e_posta'])||null,
+        address:text(row,['company_address','adres'])||null,
+        is_active:bool(row,['company_is_active','is_active','aktif'],true),
+      });
+    } else if(label && prior.name.startsWith('İşletme ')) {
+      byId.set(id,{...prior,name:label});
+    }
+  }
+  return [...byId.values()];
+}
+export async function createCompany(input:CompanyInput){const rpc=await db(requireSupabase().rpc('superadmin_create_company',{p_name:input.name,p_tax_number:input.tax_number||null,p_phone:input.phone||null,p_email:input.email||null,p_address:input.address||null}),'İşletme kaydı');if(rpc.error)throw new Error(rpc.error.message);return String(rpc.data);}
+export async function updateCompany(id:string,patch:Partial<CompanyRow>){const rpc=await db(requireSupabase().rpc('superadmin_update_company',{p_id:id,p_name:patch.name??'',p_tax_number:patch.tax_number??null,p_phone:patch.phone??null,p_email:patch.email??null,p_address:patch.address??null,p_is_active:patch.is_active??true}),'İşletme güncelleme');if(rpc.error)throw new Error(rpc.error.message);}
+export async function deleteCompany(id:string){const rpc=await db(requireSupabase().rpc('superadmin_delete_company',{p_id:id}),'İşletme silme');if(rpc.error)throw new Error(rpc.error.message);}
+export async function loadBranches(user:UserContext):Promise<BranchRow[]> {
+  const sb=requireSupabase();
+  const mapRows=(rows:AnyRow[])=>rows.map(r=>({id:text(r,['id']),company_id:text(r,['company_id','şirket_id','sirket_id','işletme_id','isletme_id']),name:text(r,['name','şube_adi','sube_adi','ad','isim','branch_name'],'Şube'),code:text(r,['code','kod'])||null,phone:text(r,['phone','telefon'])||null,email:text(r,['email','eposta','e_posta'])||null,address:text(r,['address','adres'])||null,city:text(r,['city','şehir','sehir'])||null,district:text(r,['district','ilçe','ilce'])||null,latitude:Number(pick(r,['latitude','enlem'],NaN))||null,longitude:Number(pick(r,['longitude','boylam'],NaN))||null,is_active:bool(r,['is_active','aktif'],true)}));
+  if(isSuperAdmin(user.role, user.email)){
+    try { const rpc=await db(sb.rpc('v19_get_branches'),'SUPER_ADMIN şubeleri'); if(!rpc.error&&Array.isArray(rpc.data)&&(rpc.data as AnyRow[]).length) return mapRows(rpc.data as AnyRow[]); } catch {}
+    try { const rpc=await db(sb.rpc('get_superadmin_branches'),'SUPER_ADMIN şubeleri yedek'); if(!rpc.error&&Array.isArray(rpc.data)&&(rpc.data as AnyRow[]).length) return mapRows(rpc.data as AnyRow[]); } catch {}
+  }
+  try {
+    let rows=await fetchRows(sb,TABLES.branches,'Şubeler',5000);
+    rows=filterRowsByUserBranch(rows,user);
+    if(user.companyId)rows=rows.filter(r=>String(pick(r,['company_id','şirket_id','sirket_id','işletme_id','isletme_id'],''))===user.companyId);
+    return mapRows(rows);
+  } catch (directError) {
+    // Legacy database fallback: branch data may exist on the user/branch role table even when
+    // PostgREST does not expose a standalone branches table. Never blank the entire app for this.
+    try {
+      const roleRows=await fetchRows(sb,TABLES.roles,'Kullanıcı şube rolleri',5000);
+      const branchMap=new Map<string,AnyRow>();
+      const superAdmin=isSuperAdmin(user.role,user.email);
+      for(const r of roleRows){
+        const bid=uuid(r,['branch_id','şube_id','sube_id']);
+        if(!bid) continue;
+        const cid=text(r,['company_id','şirket_id','sirket_id','işletme_id','isletme_id'],'');
+        if(!superAdmin && user.companyId && cid!==user.companyId) continue;
+        if(!superAdmin && user.branchIds.length && !user.branchIds.includes(bid)) continue;
+        if(!branchMap.has(bid)) branchMap.set(bid,{id:bid,company_id:cid,name:text(r,['branch_name','şube_adi','sube_adi','branch','sube','şube'],`Şube ${bid.slice(0,8)}`),city:text(r,['city','şehir','sehir']),phone:text(r,['phone','telefon']),is_active:true});
+      }
+      const fallback=mapRows([...branchMap.values()]);
+      if(fallback.length) return fallback;
+    } catch {}
+    const raw=directError instanceof Error ? directError.message : String(directError);
+    if(/schema cache|could not find the table|does not exist/i.test(raw)) throw new Error('Şube verisi Supabase REST katmanında görünmüyor. SUPABASE_1_SEFER_FINAL_GUVENLI.sql dosyasını Supabase SQL Editor’da bir kez çalıştırın; bu kurulum SUPER_ADMIN için şubeleri doğrudan veritabanından okuyan RPC katmanını kurar.');
+    throw directError;
+  }
+}
 export async function createBranch(input:{company_id:string;name:string;code?:string;phone?:string;email?:string;address?:string;city?:string;district?:string}){const rpc=await db(requireSupabase().rpc('v19_create_branch',{p_company_id:input.company_id,p_name:input.name,p_code:input.code||null,p_phone:input.phone||null,p_email:input.email||null,p_address:input.address||null,p_city:input.city||null,p_district:input.district||null}),'Şube kaydı');if(rpc.error)throw new Error(rpc.error.message);return String(rpc.data);}
 export async function updateBranch(id:string,patch:Partial<BranchRow>){const rpc=await db(requireSupabase().rpc('v19_update_branch',{p_id:id,p_company_id:patch.company_id??null,p_name:patch.name??'',p_code:patch.code??null,p_phone:patch.phone??null,p_email:patch.email??null,p_address:patch.address??null,p_city:patch.city??null,p_district:patch.district??null,p_is_active:patch.is_active??true}),'Şube güncelleme');if(rpc.error)throw new Error(rpc.error.message);}
 
-export async function loadSuperAdminScope(){const sb=requireSupabase();const [c,b]=await Promise.all([db(sb.rpc('v19_get_companies'),'SUPER_ADMIN işletmeleri'),db(sb.rpc('v19_get_branches'),'SUPER_ADMIN şubeleri')]);if(c.error)throw c.error;if(b.error)throw b.error;return {companies:(c.data??[]) as CompanyRow[],branches:(b.data??[]) as BranchRow[]};}
-export async function loadSuperAdminUsers():Promise<UserRow[]>{const rpc=await db(requireSupabase().rpc('v19_get_users'),'SUPER_ADMIN kullanıcıları');if(rpc.error)throw rpc.error;const rows=(rpc.data??[]) as AnyRow[];const map=new Map<string,UserRow>();for(const r of rows){const id=text(r,['id']);const item=map.get(id)??{id,username:text(r,['username']),full_name:text(r,['full_name']),email:text(r,['email']),is_active:bool(r,['is_active','aktif'],true),roles:[]};const roleId=uuid(r,['role_id','id']);const cid=uuid(r,['company_id','şirket_id','isletme_id'])||'';const bid=uuid(r,['branch_id','şube_id','sube_id']);const role=text(r,['role','rol']);if(roleId&&role) item.roles.push({id:roleId,company_id:cid,branch_id:bid,role});map.set(id,item);}return [...map.values()];}
-export async function loadUsers(user:UserContext){if(isSuperAdmin(user.role))return loadSuperAdminUsers();const sb=requireSupabase();const profiles=await fetchRows(sb,TABLES.profiles,'Kullanıcılar',3000);const roleRows=await fetchRows(sb,TABLES.roles,'Kullanıcı rolleri',5000);const allowed=roleRows.filter(r=>String(pick(r,['company_id','şirket_id','sirket_id','işletme_id','isletme_id'],''))===String(user.companyId));return profiles.map(p=>{const id=text(p,['id']);return {id,username:text(p,['username','kullanici_adi']),full_name:text(p,['full_name','ad_soyad']),email:text(p,['email','e_posta','eposta']),is_active:bool(p,['is_active','aktif'],true),roles:allowed.filter(r=>String(pick(r,['user_id','kullanici_id','kullanıcı_id'],''))===id).map(r=>({id:text(r,['id']),company_id:uuid(r,['company_id','şirket_id','sirket_id','işletme_id','isletme_id'])||'',branch_id:uuid(r,['branch_id','şube_id','sube_id']),role:text(r,['role','rol'])}))};}).filter(u=>isSuperAdmin(user.role)||u.roles.length>0);}
-export type CreateUserInput={full_name:string;username:string;email:string;password:string;company_id:string;branch_id:string|null;role:string};
-export async function createAuthUser(input:CreateUserInput){const sb=requireSupabase();if(!isSuperAdmin((await getUserContext()).role))throw new Error('Bu işlem yalnızca SUPER_ADMIN tarafından yapılabilir.');const eph=createEphemeralSupabase();if(!eph)throw new Error('Supabase bağlantısı yapılandırılmamış.');const authResult=await db(eph.auth.signUp({email:input.email.trim().toLowerCase(),password:input.password,options:{data:{username:input.username.trim().toLowerCase(),full_name:input.full_name.trim(),role:input.role,company_id:input.company_id,branch_id:input.branch_id}}}),'Auth kullanıcı oluşturma');if(authResult.error)throw authResult.error;if(!authResult.data.user)throw new Error('Auth kullanıcısı oluşturulamadı.');const rpc=await db(sb.rpc('v19_finalize_user_creation',{p_user_id:authResult.data.user.id,p_full_name:input.full_name,p_username:input.username,p_email:input.email,p_company_id:input.company_id,p_branch_id:input.branch_id,p_role:input.role}),'Kullanıcı ataması');if(rpc.error)throw new Error(`Kullanıcı oluşturuldu fakat atama tamamlanamadı: ${rpc.error.message}`);return {id:authResult.data.user.id,email:input.email,username:input.username};}
-export async function setBranchUser(...args: unknown[]) {
-  let userId = '';
-  let companyId = '';
-  let branchId: string | null = null;
-  let role = '';
-
-  if (args.length === 1 && args[0] && typeof args[0] === 'object') {
-    const input = args[0] as AnyRow;
-    userId = String(input.user_id ?? input.userId ?? '');
-    companyId = String(input.company_id ?? input.companyId ?? '');
-    branchId = input.branch_id ?? input.branchId ?? null;
-    role = String(input.role ?? '');
-  } else {
-    userId = String(args[0] ?? '');
-    companyId = String(args[1] ?? '');
-    branchId = args[2] == null || args[2] === '' ? null : String(args[2]);
-    role = String(args[3] ?? '');
+export async function loadSuperAdminScope(){const user=await getUserContext();if(!isSuperAdmin(user.role,user.email))throw new Error('İşletme/şube kapsamı yalnızca SUPER_ADMIN tarafından görüntülenebilir.');const [companies,branches]=await Promise.all([loadCompanies(user),loadBranches(user)]);return {companies,branches};}
+export async function loadSuperAdminUsers():Promise<UserRow[]>{
+ const sb=requireSupabase();
+ try{
+  const rpc=await db(sb.rpc('v19_get_users'),'SUPER_ADMIN kullanıcıları');
+  if(!rpc.error && Array.isArray(rpc.data)){
+   const rows=(rpc.data??[]) as AnyRow[]; const map=new Map<string,UserRow>();
+   for(const r of rows){const id=text(r,['id']); const item=map.get(id)??{id,username:text(r,['username']),full_name:text(r,['full_name']),email:text(r,['email']),is_active:bool(r,['is_active','aktif'],true),roles:[]}; const roleId=uuid(r,['role_id','id']); const cid=uuid(r,['company_id','şirket_id','isletme_id'])||''; const bid=uuid(r,['branch_id','şube_id','sube_id']); const role=text(r,['role','rol']); if(roleId&&role) item.roles.push({id:roleId,company_id:cid,branch_id:bid,role}); map.set(id,item); }
+   return [...map.values()];
   }
-
-  if (!userId || !companyId || !role) {
-    throw new Error('Kullanıcı, işletme ve rol bilgileri zorunludur.');
-  }
-
-  return assignUser({
-    user_id: userId,
-    company_id: companyId,
-    branch_id: branchId,
-    role,
-  });
+ }catch{/* direct fallback */}
+ const profiles=await fetchRows(sb,TABLES.profiles,'Kullanıcılar',5000); const roles=await fetchRows(sb,TABLES.roles,'Kullanıcı rolleri',10000); const map=new Map<string,UserRow>();
+ for(const p of profiles){const id=text(p,['id']); map.set(id,{id,username:text(p,['username','kullanici_adi']),full_name:text(p,['full_name','ad_soyad']),email:text(p,['email','e_posta','eposta']),is_active:bool(p,['is_active','aktif'],true),roles:[]});}
+ for(const r of roles){const id=text(r,['user_id','kullanici_id','kullanıcı_id']); const item=map.get(id); if(!item)continue; const role=text(r,['role','rol']); if(role)item.roles.push({id:text(r,['id']),company_id:uuid(r,['company_id','şirket_id','sirket_id','isletme_id'])||'',branch_id:uuid(r,['branch_id','şube_id','sube_id']),role});}
+ return [...map.values()];
 }
 
-export async function assignUser(input:{user_id:string;company_id:string;branch_id:string|null;role:string}){const rpc=await db(requireSupabase().rpc('v19_assign_user',{p_user_id:input.user_id,p_company_id:input.company_id,p_branch_id:input.branch_id,p_role:input.role}),'Kullanıcı ataması');if(rpc.error)throw rpc.error;}
+export async function loadUsers(user:UserContext){if(isSuperAdmin(user.role, user.email))return loadSuperAdminUsers();const sb=requireSupabase();const profiles=await fetchRows(sb,TABLES.profiles,'Kullanıcılar',3000);const roleRows=await fetchRows(sb,TABLES.roles,'Kullanıcı rolleri',5000);const allowed=roleRows.filter(r=>String(pick(r,['company_id','şirket_id','sirket_id','işletme_id','isletme_id'],''))===String(user.companyId));return profiles.map(p=>{const id=text(p,['id']);return {id,username:text(p,['username','kullanici_adi']),full_name:text(p,['full_name','ad_soyad']),email:text(p,['email','e_posta','eposta']),is_active:bool(p,['is_active','aktif'],true),roles:allowed.filter(r=>String(pick(r,['user_id','kullanici_id','kullanıcı_id'],''))===id).map(r=>({id:text(r,['id']),company_id:uuid(r,['company_id','şirket_id','sirket_id','işletme_id','isletme_id'])||'',branch_id:uuid(r,['branch_id','şube_id','sube_id']),role:text(r,['role','rol'])}))};}).filter(u=>isSuperAdmin(user.role, user.email)||u.roles.length>0);}
+export type CreateUserInput={full_name:string;username:string;email:string;password:string;company_id:string;branch_id:string|null;role:string};
+export async function createAuthUser(input:CreateUserInput){const sb=requireSupabase();const caller=await getUserContext();if(!isSuperAdmin(caller.role,caller.email))throw new Error('Bu işlem yalnızca SUPER_ADMIN tarafından yapılabilir.');const eph=createEphemeralSupabase();if(!eph)throw new Error('Supabase bağlantısı yapılandırılmamış.');const authResult=await db(eph.auth.signUp({email:input.email.trim().toLowerCase(),password:input.password,options:{data:{username:input.username.trim().toLowerCase(),full_name:input.full_name.trim(),role:input.role,company_id:input.company_id,branch_id:input.branch_id}}}),'Auth kullanıcı oluşturma');if(authResult.error)throw authResult.error;if(!authResult.data.user)throw new Error('Auth kullanıcısı oluşturulamadı.');const rpc=await db(sb.rpc('superadmin_finalize_user_creation',{p_user_id:authResult.data.user.id,p_full_name:input.full_name,p_username:input.username,p_email:input.email,p_company_id:input.company_id,p_branch_id:input.branch_id,p_role:input.role}),'Kullanıcı ataması');if(rpc.error)throw new Error(`Kullanıcı oluşturuldu fakat atama tamamlanamadı: ${rpc.error.message}`);return {id:authResult.data.user.id,email:input.email,username:input.username};}
+export async function resetUserPassword(userId:string,newPassword:string){
+ const sb=requireSupabase();
+ const caller=await getUserContext();
+ if(!isSuperAdmin(caller.role,caller.email))throw new Error('Bu işlem yalnızca SUPER_ADMIN tarafından yapılabilir.');
+ const cleanUserId=String(userId||'').trim();
+ const cleanPassword=String(newPassword||'');
+ if(!cleanUserId)throw new Error('Kullanıcı seçilmedi.');
+ if(cleanPassword.length<6)throw new Error('Yeni şifre en az 6 karakter olmalıdır.');
+ const {data,error}=await db(sb.functions.invoke('admin-create-user',{body:{action:'reset_password',user_id:cleanUserId,new_password:cleanPassword}}),'Kullanıcı şifresi');
+ if(error)throw new Error(error.message);
+ if((data as any)?.error)throw new Error(String((data as any).error));
+ return data;
+}
+
+export async function requestPasswordResetNotification(email:string){
+ const sb=requireSupabase();
+ const clean=String(email||'').trim().toLowerCase();
+ if(!clean)throw new Error('E-posta zorunludur.');
+ const {data,error}=await db(sb.functions.invoke('help-center',{body:{action:'password_reset',email:clean}}),'Şifre sıfırlama bildirimi',9000);
+ if(error)throw new Error(error.message);
+ if((data as any)?.error)throw new Error(String((data as any).error));
+ return data;
+}
+
+export async function assignUser(input:{user_id:string;company_id:string;branch_id:string|null;role:string}){const rpc=await db(requireSupabase().rpc('superadmin_assign_user',{p_user_id:input.user_id,p_company_id:input.company_id,p_branch_id:input.branch_id,p_role:input.role}),'Kullanıcı ataması');if(rpc.error)throw rpc.error;}
 export async function assignUserMany(userId:string,companyId:string,branchIds:string[],role:string){if(!branchIds.length){await assignUser({user_id:userId,company_id:companyId,branch_id:null,role});return;}for(const branchId of branchIds)await assignUser({user_id:userId,company_id:companyId,branch_id:branchId,role});}
-export async function removeUserAssignment(id:string){const rpc=await db(requireSupabase().rpc('v19_remove_user_assignment',{p_id:id}),'Kullanıcı ataması kaldırma');if(rpc.error)throw rpc.error;}
+export async function setBranchUser(userId:string,companyId:string,branchId:string,role:string){const rpc=await db(requireSupabase().rpc('superadmin_set_branch_user',{p_user_id:userId,p_company_id:companyId,p_branch_id:branchId,p_role:role}),'Şube kullanıcı ataması');if(rpc.error)throw rpc.error;}
+export async function removeUserAssignment(id:string){const rpc=await db(requireSupabase().rpc('superadmin_remove_user_assignment',{p_id:id}),'Kullanıcı ataması kaldırma');if(rpc.error)throw rpc.error;}
 
 export const APP_PERMISSIONS=[['GELIR_EKLE','Gelir ekleme'],['GELIR_DUZENLE','Gelir düzenleme'],['GELIR_SIL','Gelir pasifleştirme'],['GIDER_EKLE','Gider ekleme'],['GIDER_DUZENLE','Gider düzenleme'],['GIDER_SIL','Gider pasifleştirme'],['FATURA_EKLE','Fatura ekleme'],['FATURA_DUZENLE','Fatura düzenleme'],['FATURA_SIL','Fatura pasifleştirme'],['FATURA_ODEME','Fatura ödeme'],['KULLANICI_YONET','Kullanıcı yönetimi'],['SUBE_YONET','Şube yönetimi'],['RAPOR_GOR','Rapor görüntüleme']] as const;
 export async function loadPermissions(userId:string){const rows=await fetchRows(requireSupabase(),TABLES.permissions,'Kullanıcı yetkileri',3000);return rows.filter(r=>String(pick(r,['user_id','kullanici_id','kullanıcı_id']))===userId).map(r=>({id:text(r,['id']),user_id:userId,permission:text(r,['permission','izin','yetki']),value:bool(r,['value','deger','değer','aktif','enabled'],false)}));}
@@ -456,7 +470,7 @@ export async function updateProfile(userId:string,patch:{full_name?:string;phone
 
 export async function loadRatesFromTransactions(user:UserContext){const tx=await normalizedTransactions(user,7000);let usd=0,eur=0;for(const r of tx){usd=usd||num(r.raw,['dolar_kur','usd_buy','usd_kur']);eur=eur||num(r.raw,['euro_kur','eur_buy','eur_kur']);if(usd&&eur)break;}return [{code:'USD',name:'ABD Doları',buy:usd,sell:usd,source:'Gerçek finans kaydı'},{code:'EUR',name:'Euro',buy:eur,sell:eur,source:'Gerçek finans kaydı'}].filter(r=>r.buy>0);}
 export type ReportData={transactions:ModuleTransaction[];invoices:InvoiceRow[];cari:CariRow[]};
-export async function loadReportData(user:UserContext,from:string,to:string,branchId?:string):Promise<ReportData>{const [tx,inv,cari]=await Promise.all([loadModuleTransactions(user),loadInvoices(user),loadCari(user)]);const inRange=(v:string)=>{const k=v.slice(0,10);return (!from||k>=from)&&(!to||k<=to)};const inScopeBranch=(bid:string|null)=>branchId?bid===branchId:(user.companyId&&user.branchIds.length?user.branchIds.includes(String(bid||'')):true);const txFiltered=tx.filter(r=>inRange(r.date)&&inScopeBranch(r.branchId||null));const invFiltered=inv.filter(r=>inRange(text(r,['tarih','date']))&&inScopeBranch(uuid(r,['branch_id','şube_id','sube_id'])));const cariFiltered=cari.filter(r=>inRange(text(r,['tarih','date']))&&inScopeBranch(uuid(r,['branch_id','şube_id','sube_id'])));return {transactions:txFiltered,invoices:invFiltered,cari:cariFiltered};}
+export async function loadReportData(user:UserContext,from:string,to:string,branchId?:string):Promise<ReportData>{const [tx,inv,cari]=await Promise.all([loadModuleTransactions(user),loadInvoices(user),loadCari(user)]);const inRange=(v:string)=>{const k=v.slice(0,10);return (!from||k>=from)&&(!to||k<=to)};const inScopeBranch=(bid:string|null)=>branchId?bid===branchId:(user.companyId&&user.branchIds.length?user.branchIds.includes(String(bid||'')):true);const txFiltered=tx.filter(r=>inRange(r.dateKey||r.date)&&inScopeBranch(r.branchId||null));const invFiltered=inv.filter(r=>inRange(text(r,['tarih','date']))&&inScopeBranch(uuid(r,['branch_id','şube_id','sube_id'])));const cariFiltered=cari.filter(r=>inRange(text(r,['tarih','date']))&&inScopeBranch(uuid(r,['branch_id','şube_id','sube_id'])));return {transactions:txFiltered,invoices:invFiltered,cari:cariFiltered};}
 
 export type PosmistRow={id:string;company_id:string;branch_id:string|null;business_id:string;api_url:string;api_key?:string|null;endpoint_path?:string|null;json_path?:string|null;enabled:boolean;daily_time:string};
 export async function loadPosmist(){const rows=await fetchRows(requireSupabase(),TABLES.posmist,'POSMIST',3000);return rows.filter(r=>!pick(r,['deleted_at','silindi_at'])).map(r=>({id:text(r,['id']),company_id:text(r,['company_id','şirket_id','sirket_id','işletme_id']),branch_id:uuid(r,['branch_id','şube_id','sube_id']),business_id:text(r,['business_id','işletme_kodu','business']),api_url:text(r,['api_url','api_adresi']),api_key:null,endpoint_path:text(r,['endpoint_path','endpoint']),json_path:text(r,['json_path'],'data.cash_total'),enabled:bool(r,['enabled','aktif'],true),daily_time:text(r,['daily_time','günlük_saat','gunluk_saat'],'23:59')}));}
@@ -464,7 +478,24 @@ export async function savePosmist(input:{id?:string;company_id:string;branch_id:
 export async function deletePosmist(id:string){const rpc=await db(requireSupabase().rpc('v19_update_json',{p_candidates:TABLES.posmist,p_id:id,p_payload:{deleted_at:new Date().toISOString(),silindi_at:new Date().toISOString(),aktif:false,is_active:false}}),'POSMIST kaldırma');if(rpc.error)throw rpc.error;}
 
 export type AppNotification={id:string;title:string;message:string;is_read:boolean;created_at:string;help:{sender_id:string;sender_name:string;sender_email:string;sender_phone:string;subject:string;message:string}|null};
-const parseHelpMessage=(message:string):AppNotification['help']=>{for(const prefix of ['[KASA_HELP_V2]','[KASA_HELP_V1]']){if(message.startsWith(prefix)){try{return JSON.parse(message.slice(prefix.length)) as AppNotification['help'];}catch{return null;}}}return null;};
-export async function submitHelpRequest(input:{subject:string;message:string},_user:UserContext){const rpc=await db(requireSupabase().rpc('v19_submit_help_request',{p_subject:input.subject.trim(),p_message:input.message.trim()}),'Yardım talebi');if(rpc.error)throw new Error(rpc.error.message);if(!rpc.data)throw new Error('Bildirim oluşturulamadı.');return rpc.data;}
-export async function loadNotifications(user:UserContext){if(!isSuperAdmin(user.role))return [] as AppNotification[];const rpc=await db(requireSupabase().rpc('v19_load_notifications'),'Bildirimler');if(rpc.error)throw rpc.error;return ((rpc.data??[]) as AnyRow[]).map(r=>({id:text(r,['id']),title:text(r,['title'],'Bildirim'),message:text(r,['message']),is_read:bool(r,['is_read','okundu','okunuyor','okundu_mu'],false),created_at:text(r,['created_at','oluşturulma_tarihi','olusturulma_tarihi','tarih']),help:parseHelpMessage(text(r,['message']))}));}
-export async function markNotificationRead(id:string){const rpc=await db(requireSupabase().rpc('v19_mark_notification_read',{p_id:id}),'Bildirim okundu');if(rpc.error)throw rpc.error;}
+const parseHelpMessage=(message:string):AppNotification['help']=>{for(const prefix of ['[KASA_HELP_V3]','[KASA_HELP_V2]','[KASA_HELP_V1]']){if(message.startsWith(prefix)){try{return JSON.parse(message.slice(prefix.length)) as AppNotification['help'];}catch{return null;}}}return null;};
+export async function submitHelpRequest(input:{subject:string;message:string},_user:UserContext){const sb=requireSupabase();let rpc=await db(sb.rpc('submit_help_request',{p_subject:input.subject.trim(),p_message:input.message.trim()}),'Yardım talebi');if(rpc.error){rpc=await db(sb.rpc('v19_submit_help_request',{p_subject:input.subject.trim(),p_message:input.message.trim()}),'Yardım talebi');}if(rpc.error)throw new Error(rpc.error.message);if(!rpc.data)throw new Error('Bildirim oluşturulamadı.');return rpc.data;}
+export async function loadNotifications(user:UserContext){
+  if(!isSuperAdmin(user.role, user.email))return [] as AppNotification[];
+  const sb=requireSupabase();
+  const mapRows=(rows:AnyRow[])=>rows.map(r=>({id:text(r,['id']),title:text(r,['title','baslik','başlık','konu'],'Bildirim'),message:text(r,['message','mesaj','mesaj_metin','mesaj_metni','icerik','içerik']),is_read:bool(r,['is_read','okundu','okunuyor','okundu_mu'],false),created_at:text(r,['created_at','oluşturulma_tarihi','olusturulma_tarihi','tarih']),help:parseHelpMessage(text(r,['message','mesaj','icerik','içerik'],' '))}));
+  try {
+    const rpc=await db(sb.rpc('v19_load_notifications'),'Bildirimler RPC');
+    if(!rpc.error && Array.isArray(rpc.data)) return mapRows(rpc.data as AnyRow[]);
+  } catch {}
+  const rows=await fetchRows(sb,TABLES.notifications,'Bildirimler',1000);
+  const recipientKey=['user_id','kullanici_id','kullanıcı_id','recipient_id','alici_id','alıcı_id'].find(k=>rows.some(r=>r?.[k]!==undefined));
+  const filtered=recipientKey ? rows.filter(r=>String(pick(r,[recipientKey],''))===user.id) : rows;
+  return mapRows(filtered).sort((a,b)=>b.created_at.localeCompare(a.created_at));
+}
+export async function markNotificationRead(id:string){
+  const sb=requireSupabase();
+  try{const rpc=await db(sb.rpc('v19_mark_notification_read',{p_id:id}),'Bildirim okundu');if(!rpc.error)return;}catch{/* fallback below */}
+  const {error}=await db((sb.from('notifications') as any).update({is_read:true}).eq('id',id),'Bildirim okundu yedek');
+  if(error)throw new Error(`Bildirim okundu: ${error.message}`);
+}
