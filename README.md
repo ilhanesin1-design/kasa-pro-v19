@@ -1,41 +1,22 @@
-# KASA PRO V19.37 — Tek Paket Kurulumu
+# KASA PRO V19.38 — Kullanıcı kodları mevcut proje dosyalarına uygulandı
 
-Bu ZIP tüm kaynak kodunu içerir. Parça yaması indirmeniz veya ZIP'leri birleştirmeniz gerekmez.
+Bu paket, mevcut KASA PRO V19.37 kaynak yapısının üzerine istenen arayüz iyileştirmelerinin uygulanmış hâlidir. Ayrı yama birleştirme işlemi gerektirmez.
 
-## İçerdiği istenen özellikler
-- Gösterge panelinde bu ay en yüksek gider kategorisi ve toplam gider içindeki yüzdesi.
-- Sistem durumunda `Server Aktif` / `Çevrimdışı`; önbellekten veri gösteriliyorsa sunucu bağlı gibi gösterilmez.
-- Çevrimdışı okunabilir önbellek; gelir/gider, fatura, cari ve yönetici Yardım Merkezi bildirimi için yerel kuyruk; çevrimiçi olunca 15 saniyelik tekrar deneme ve aynı olay UUID'siyle yinelenen kayıt koruması.
-- Kasa İşlemleri alt menülerinde daha büyük, daha okunaklı yazılar.
-- Okunmuş bildirimleri temizleme.
-- Yardım Merkezi'nde diğer kapsam içindeki yöneticilere bildirim gönderme ve bildirimleri kullanıcıya göre okuma.
-- Gelir ve gider için ayrı `/income` ve `/expense` ekranları.
-- Kullanıcıya gelir/gider ve cari hareket ekleme, düzenleme ve silme ile fatura ve POSMIST görüntüleme/yönetme izinleri atama.
-- Faturada toplam/ödenen/kalan tutar ve tarihli ödeme geçmişi; çevrimdışı fatura oluşturma ve aynı fatura için kuyruktaki ödemeleri senkronizasyonda gerçek fatura kimliğine bağlama.
-- Süper yönetici tüm izinleri korur; diğer hesaplar yalnızca atanan `POSMIST_GOR` ve/veya `POSMIST_YONET` izinleri kadar POSMIST erişimi alır.
+## Bu pakette uygulanan güncellemeler
+- Dashboard'da aktif kapsamın aylık en yüksek gider kategorisi, gider tutarı ve yüzdesi belirgin ayrı kartta gösterilir.
+- Sistem durumu metinleri `Server Aktif` / `Çevrimdışı` biçimindedir; çevrimdışı işlem kuyruğu ve bağlantı sonrası otomatik senkronizasyon korunmuştur.
+- Kasa İşlemleri alt menüleri büyük tipografiyle gösterilir; Tüm İşlemler sayfasında Yeni Gelir Ekle ve Yeni Gider Ekle düğmeleri büyütülmüştür. Gelir ve gider ayrı rotalarda açılır.
+- Bildirim açılır penceresine okunmuş bildirimleri temizle düğmesi eklenmiştir. Bildirim Merkezi sayfasındaki temizleme özelliği korunmuştur.
+- Yardım Merkezi mesajı, aynı kapsam yöneticilerinin Bildirim Merkezi'ne gönderilecek şekilde açıklayıcı hale getirilmiştir.
+- Kullanıcı atama penceresine açık izin checkbox'ları eklendi; kayıt sırasında atama ve seçili izinler kaydedilir. Genel Yetki Merkezi korunur.
+- Faturalardaki borç, ödenen, kalan tutar ve tarihli ödeme geçmişi ekranları korunmuştur.
+- POSMIST sayfasındaki kontrollü erişim açıklaması ve sürüm işareti güncellendi; SUPER_ADMIN ve `POSMIST_GOR` / `POSMIST_YONET` izinli kullanıcılar için mevcut kontrol korunur.
+- Daha önce başarıyla çalıştırılmış SQL dosyasının kanonik yolu korunmuştur: `supabase/sql/INSTALL_V19_37_ALL_FEATURES.sql`. Bu uygulama SQL'i otomatik yeniden çalıştırmaz.
 
-## Kurulum: tek ZIP, tek yeni SQL dosyası
+## Kurulum / test notu
+1. ZIP'i açın ve GitHub için ayrı bir test dalında proje dosyalarını karşılaştırarak aktarın; çalışan `main` dalının üzerine yedek almadan yazmayın.
+2. Yerel derleme için `npm install` ve `npm run build` çalıştırın.
+3. İsterseniz Windows üzerinde `TEK_SEFER_YAYINLA.bat` dosyasını çalıştırın. Betik temiz `main` dalından `test/v19.38-code-applied-*` dalı oluşturur; üretim dalına doğrudan gönderim yapmaz. Derleme başarılı olursa yalnızca test dalına gönderir.
+4. Vercel Preview’da giriş, POSMIST izinleri, çevrimdışı kuyruk, gelir/gider kaydı, bildirim temizleme, yardım mesajı ve fatura ara ödeme geçmişini doğrulayın. Test geçmeden `main` dalına birleştirmeyin.
 
-1. GitHub'da mevcut `main` dalını ve Supabase projesini yedekleyin. Mevcut kaynaklara doğrudan üzerine yazmak yerine `test/v19.37` gibi test dalında deneyin.
-2. ZIP'i bilgisayarınıza indirin ve ayıklayın. İçindeki proje dosyalarını (özellikle `src`, `supabase`, `package.json`, `vite.config.ts` ve `index.html`) proje köküne, klasör yapısını koruyarak aktarın. ZIP'in kendisini GitHub'a yüklemeyin.
-3. Vercel Preview'de test dalını derleyin. Depoda Supabase ortam değişkenleri (`VITE_SUPABASE_URL` ve `VITE_SUPABASE_PUBLISHABLE_KEY`) zaten tanımlı olmalıdır; eksikse mevcut doğru değerleri Vercel ayarlarından kontrol edin, anahtarları sohbet içine göndermeyin.
-4. Supabase SQL Editor'de **yalnızca** `supabase/sql/INSTALL_V19_37_ALL_FEATURES.sql` dosyasının tamamını, daha önce kullandığınız aynı Supabase projesinde test ortamında çalıştırın. Dosya başlangıçta gerekli mevcut V19 helper/RPC fonksiyonlarını denetler ve eksiklerse açıklayıcı hata ile kurulumun başında durur. Eksik fonksiyonlar için bütün eski SQL dosyalarını gelişigüzel çalıştırmayın.
-5. Vercel Preview derlemesi ve SQL kurulumu başarılı olduktan sonra aşağıdaki testleri yapın. Sorun yoksa test dalını `main` ile birleştirin ve üretim dağıtımını izleyin.
-
-## Zorunlu testler
-- Süper yönetici: POSMIST ayarlarını ekleyebiliyor/düzenleyebiliyor/silebiliyor; tüm menü ve yetkileri açık.
-- Sadece `POSMIST_GOR`: bağlantıları görebiliyor, ama ekleme/düzenleme/silme yapamıyor.
-- `POSMIST_YONET`: atanan şirket/şube kapsamında ayarları yönetebiliyor.
-- Gelir ekleme izni açık, silme izni kapalı kullanıcı: gelir ekleyebiliyor, ama silemiyor; aynı test gider için de yapılmalı.
-- İnternet kapalıyken bir gelir/gider kaydı ve bir fatura oluşturun; uygulama işlemi cihazda bekletmeli. Bağlantı dönünce kayıtlar otomatik aktarılmalı ve aynı olay tekrar gönderilse bile çift kayıt oluşmamalı.
-- Faturaya iki ayrı kısmi ödeme girin; toplam borç, ödenen, kalan ve iki tarih/tutar satırı doğru görünmeli.
-- Bir yönetici Yardım Merkezi'nden kapsamındaki başka bir yöneticiye mesaj göndersin; alıcı Bildirim Merkezi'nde mesajı okusun ve okunan bildirimleri temizleyebilsin.
-
-## Test durumu ve sınırlar
-Kaynak dosyaları statik TypeScript/TSX transpile, yerel import hedefleri/eşleşmeleri ve ZIP bütünlüğüyle kontrol edin. Bu çalışma ortamında NPM kayıt sunucusuna DNS bağlantısı kurulamadığı için `npm install` tamamlanamadı; bu nedenle burada Vite üretim derlemesi başarılı diye raporlanamaz. Canlı Supabase veritabanı da bu çalışma sırasında erişilebilir değildi; SQL/RPC davranışı canlıda çalıştırılarak test edilmiş sayılmaz. Preview derleme ve SQL sonrası gerçek testleri tamamlamadan paketi üretime almayın.
-
-## Çevrimdışı modun sınırları
-Oturumun çevrimdışında yeniden açılabilmesi için kullanıcı daha önce çevrimiçiyken giriş yapmış olmalı ve tarayıcıdaki Supabase oturumu duruyor olmalıdır. Önceden önbelleğe alınmamış kayıtlar çevrimdışında gösterilemez. Kullanıcı atama, yetki değişiklikleri, şirket/şube kurulumu ve POSMIST gizli anahtar yönetimi çevrimiçi yapılır. Yerel kuyruk bu cihaz ve tarayıcıya özgüdür; tarayıcı verilerini temizlemek bekleyen kayıtları silebilir, bu yüzden senkron bekleyen kayıtlar varken site verilerini temizlemeyin.
-
-## POSMIST günlük veri çekimi
-Bu ZIP kontrollü POSMIST erişimi ve bağlantı ayarlarını yönetir; API anahtarını liste yanıtlarında göstermez. Sağlayıcının gerçek API yanıt örneği ve auth/endpoint kuralları sağlanmadığı için POSMIST'ten günlük veri çekimini yapan zamanlanmış Edge Function'ın tamamlandığı iddia edilmez. `Server Aktif` uygulama backend'inin erişilebilirliğini ifade eder; POSMIST kaynağının verisinin güncel olduğunu tek başına garanti etmez.
+**Test dürüstlüğü:** Kaynaklar statik olarak kontrol edildi. Bu ortamda bağımlılıklar yüklenemediği için Vite üretim derlemesi doğrulanamadı. Supabase/Posmist harici servisi canlı bağlantıda test edilmedi.
