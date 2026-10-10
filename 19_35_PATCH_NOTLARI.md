@@ -1,21 +1,28 @@
-# KASA PRO V19.35 yama notları
+# KASA PRO V19.35.1 düzeltme notları
 
-## Bu paketteki değişiklikler
-- Dashboard gider kategorileri son 8 işlemden değil, yüklenen gerçek finans kayıtlarının içinde bulunulan aya ait gider kayıtlarından hesaplanır; en yüksek kategori ve yüzdesi görünür.
-- Sistem durumu metni “Supabase Bağlantısı” yerine “Server” ve “Senkronizasyon” olarak gösterilir. Bağlantı durumu başarılı veri yüklemesine ve tarayıcı ağ olaylarına göre güncellenir.
-- Kasa İşlemleri alt menülerinin yazı ve tıklama alanları büyütülür.
-- Gelir ve gider için ayrı ekran rotaları eklenir; bu ekranlardan işlem türü sabit kalır. Tüm İşlemler ve Kasa ekranları korunur.
-- Bildirim Merkezi'ne okunmuş bildirimleri temizleme kontrolü eklenir.
-- Fatura dosyasında her fatura için toplam, ödenen, kalan ve açılabilir ödeme geçmişi gösterilir.
-- SQL yaması Yardım Merkezi bildirimlerini ortak şirket/şube kapsamındaki yöneticilere ve SUPER_ADMIN'e iletecek şekilde günceller; SUPER_ADMIN için okundu bildirimlerini temizleyen güvenli RPC ekler.
+## Bu pakette yapılan düzeltmeler
+- Dashboard gider kategorileri, yüklenen finans hareketlerinin içindeki bulunulan aya ait giderlerden hesaplanır; kategori halka grafiği, en yüksek kategori etiketi ve yüzde payları aynı toplama dayanır.
+- Sistem Durumu kartı "Server Aktif" / "Çevrimdışı" durumunu gösterir. Bu kart tüm modüller için çevrimdışı yazma kuyruğu anlamına gelmez.
+- Kasa İşlemleri alt menülerinin yazı ve tıklama alanları büyütülmüştür.
+- Gelir ve gider için ayrı rotalar vardır. Bu rotalarda tür filtresi zorunlu kalır; ekranlar arasında tür dışı kayda geçilemez.
+- Dashboard hızlı işlem düğmeleri doğrudan `/income` ve `/expense` ekranlarına gider.
+- Düzenlenen finans kaydında mevcut şube seçili gelir; tarih filtreleme ve düzenleme ISO tarih anahtarını kullanır. Güncellemede tutarın 0'dan büyük olması doğrulanır.
+- Okunmuş bildirimleri temizleme düğmesi eklenmiştir.
+- Bildirim SQL'i Türkçe `bildirimler` ve İngilizce `notifications` tablo adaylarını ve mevcut V19.33 uyumluluk yardımcılarını kullanır. `v19_load_notifications()` yöneticiye yalnızca kendi hesabına gelen bildirimleri döndürür.
+- İstemci, eski yüklemelerde SUPER_ADMIN dışındaki yöneticilere boş liste döndüren bildirim RPC'si sonucunda RLS korumalı tablo okuyucusuna geri döner; alternatif Türkçe/İngilizce alıcı ve içerik sütun adlarını da kontrol eder.
+- Finans işlemi güncelleme yordamı boş şube ve sıfır/negatif tutarı reddeder.
 
-## Kurulum
-1. Bu ZIP içindeki dosyaları GitHub `main` dalındaki aynı yollarla değiştirin.
-2. Supabase SQL Editor'de `supabase/sql/V19_35_FEATURE_PATCH.sql` dosyasını çalıştırın.
-3. Commit/push sonrası Vercel dağıtımını bekleyin.
+## Kurulum sırası
+1. GitHub `main` dalına ZIP'in tümünü toplu olarak değil, içindeki dosyaları aynı yollarla, inceleyerek aktarın.
+2. Ön koşul olarak canlı Supabase ortamında V19.33 uyumluluk yardımcılarının (`v19_pick_table`, `v19_column_name`, `v19_norm_role`, `v19_insert_json`, `v19_update_json`, `v19_is_super_admin`) kurulu olduğunu doğrulayın.
+3. Supabase SQL Editor'de yalnızca `supabase/sql/V19_35_FEATURE_PATCH.sql` dosyasını çalıştırın. Canlı şema/RLS incelemesi yapılmadan diğer tarihsel SQL dosyalarını toplu çalıştırmayın.
+4. Commit sonrası Vercel Preview'da derleme ve oturum/işlem/bildirim/fatura akışlarını test edin. Önce gelir/gider ve bildirim testleri geçmeden canlıya almayın.
 
-## Önemli sınırlama
-Bu yama tam çevrimdışı yazma kuyruğunu ve tüm modüller için sunucu tarafında idempotent senkronizasyonu henüz sağlamaz. Var olan RPC'lerin imzaları ve canlı veritabanı şeması, çevrimdışı sıradaki işlemlerin güvenli şekilde tekilleştirilmesini destekleyecek biçimde doğrulanmadan işlemleri yerel kuyruğa alıp otomatik göndermek mükerrer finans kaydı oluşturabilir. Bu nedenle bu pakette çevrimdışı senkronizasyonun tamamlandığı iddia edilmemektedir. Üretime hazır çevrimdışı kayıt için tüm yazma RPC'lerine idempotency anahtarı ekleyen bir veritabanı geçişi ve her modülün kayıt akışının buna bağlanması gerekir.
+## Bilinen sınırlamalar
+- Bu paket tüm modüller için kalıcı çevrimdışı yazma kuyruğu ve sunucu tarafı idempotent senkronizasyon sağlamaz. Bu özellik tamamlanmış değildir.
+- Yetki Merkezi izin değerlerini saklar; ancak bu pakette gelir/gider ekle/düzenle/sil izinlerinin bütün sunucu RPC'lerinde zorunlu uygulanması tamamlanmış olarak doğrulanmamıştır. Bu değerleri tek başına güvenlik sınırı kabul etmeyin.
+- Supabase üretim şemasına, RLS politikalarına veya Vercel Preview'a bu ortamdan erişilemediği için canlı entegrasyon testi yapılmamıştır.
+- Bağımlılıklar ağ zaman aşımı nedeniyle kurulamadı; bu yüzden tam `npm run build` testi başarılı olarak raporlanamaz.
 
-## Doğrulama
-Kaynak ZIP mevcut ortamda düzenlendi. `npm run build` çalıştırılmak istendi ancak bağımlılıklar kurulu değildi; `npm install` bu ortamda zaman aşımına uğradı. Bu nedenle bu paket için tam derleme testi doğrulanmış değildir. Önce staging/preview ortamında derleme ve akış testleri yapılmalıdır.
+## Test kapsamı
+Statik kaynak kontrolleri ve ZIP bütünlüğü kontrol edildi. Ancak bu ortamda bağımlılıklar kurulamadığı için Vite üretim derlemesi, tam TypeScript tür kontrolü ve PostgreSQL/Supabase üzerinde SQL çalıştırma testi tamamlanmadı. Ayrıntı: `TEST_RAPORU_19_35_1.md`.

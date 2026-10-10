@@ -1,0 +1,27 @@
+{
+  "tsFiles": 24,
+  "syntaxErrors": [],
+  "localImports": 40,
+  "namedChecked": 130,
+  "importErrors": [],
+  "assertions": {
+    "income route present": true,
+    "expense route present": true,
+    "forced filter isolates type": true,
+    "type tabs hidden on forced pages": true,
+    "dashboard shortcuts route": true,
+    "monthly category denominator returned": true,
+    "notification migration supports both table names": true,
+    "notification load includes recipient ownership filter": true,
+    "mark notification supports alternative ID column": true,
+    "offline sync limitation disclosed": true,
+    "invoice history component present": true,
+    "invoice paid total readonly": true,
+    "transaction update validates positive amount": true
+  },
+  "sqlCheck": {
+    "dollarQuote": 8,
+    "queryQuote": 4,
+    "noConflictMarkers": true
+  }
+}
