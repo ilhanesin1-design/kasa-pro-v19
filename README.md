@@ -1,22 +1,29 @@
-# KASA PRO V19.38 — Kullanıcı kodları mevcut proje dosyalarına uygulandı
+# KASA PRO V19 · BY İLHAN EŞİN
 
-Bu paket, mevcut KASA PRO V19.37 kaynak yapısının üzerine istenen arayüz iyileştirmelerinin uygulanmış hâlidir. Ayrı yama birleştirme işlemi gerektirmez.
+Tauri 2 + React + TypeScript + Supabase ile çalışan masaüstü finans yönetim uygulaması.
 
-## Bu pakette uygulanan güncellemeler
-- Dashboard'da aktif kapsamın aylık en yüksek gider kategorisi, gider tutarı ve yüzdesi belirgin ayrı kartta gösterilir.
-- Sistem durumu metinleri `Server Aktif` / `Çevrimdışı` biçimindedir; çevrimdışı işlem kuyruğu ve bağlantı sonrası otomatik senkronizasyon korunmuştur.
-- Kasa İşlemleri alt menüleri büyük tipografiyle gösterilir; Tüm İşlemler sayfasında Yeni Gelir Ekle ve Yeni Gider Ekle düğmeleri büyütülmüştür. Gelir ve gider ayrı rotalarda açılır.
-- Bildirim açılır penceresine okunmuş bildirimleri temizle düğmesi eklenmiştir. Bildirim Merkezi sayfasındaki temizleme özelliği korunmuştur.
-- Yardım Merkezi mesajı, aynı kapsam yöneticilerinin Bildirim Merkezi'ne gönderilecek şekilde açıklayıcı hale getirilmiştir.
-- Kullanıcı atama penceresine açık izin checkbox'ları eklendi; kayıt sırasında atama ve seçili izinler kaydedilir. Genel Yetki Merkezi korunur.
-- Faturalardaki borç, ödenen, kalan tutar ve tarihli ödeme geçmişi ekranları korunmuştur.
-- POSMIST sayfasındaki kontrollü erişim açıklaması ve sürüm işareti güncellendi; SUPER_ADMIN ve `POSMIST_GOR` / `POSMIST_YONET` izinli kullanıcılar için mevcut kontrol korunur.
-- Daha önce başarıyla çalıştırılmış SQL dosyasının kanonik yolu korunmuştur: `supabase/sql/INSTALL_V19_37_ALL_FEATURES.sql`. Bu uygulama SQL'i otomatik yeniden çalıştırmaz.
+## Bu sürümde
+- Gerçek Supabase verileri; demo finans rakamları yok.
+- SUPER_ADMIN işletme → şube kapsamını ayrı ayrı seçebilir.
+- SUPER_ADMIN işletme oluşturabilir ve kullanıcı → işletme → çoklu şube → rol atayabilir.
+- Gelir/gider kayıtlarında işlemi yapan kullanıcı adı gösterilir.
+- Faturalar firma dosyası altında gruplanır; içeriğinde faturalar ayrı ayrı görünür.
+- Fatura ödeme yöntemleri yalnızca Kasa ve Kart. Kasa ödemesi finans hareketlerine Gider olarak yazılır.
+- Fatura düzenleme, soft-delete ve profesyonel yazdır/PDF görünümü bulunur.
+- Yardım Merkezi SUPER_ADMIN bildirim merkezine kayıt oluşturur; bildirimler 5 saniyede bir yenilenir.
+- Raporu oluştur düğmesi kurumsal XLSX dosyasını doğrudan indirir.
+- Şifre sıfırlama Supabase Auth e-postası üzerinden yapılır.
+- Giriş ve uygulama tipografisi büyütülmüştür.
 
-## Kurulum / test notu
-1. ZIP'i açın ve GitHub için ayrı bir test dalında proje dosyalarını karşılaştırarak aktarın; çalışan `main` dalının üzerine yedek almadan yazmayın.
-2. Yerel derleme için `npm install` ve `npm run build` çalıştırın.
-3. İsterseniz Windows üzerinde `TEK_SEFER_YAYINLA.bat` dosyasını çalıştırın. Betik temiz `main` dalından `test/v19.38-code-applied-*` dalı oluşturur; üretim dalına doğrudan gönderim yapmaz. Derleme başarılı olursa yalnızca test dalına gönderir.
-4. Vercel Preview’da giriş, POSMIST izinleri, çevrimdışı kuyruk, gelir/gider kaydı, bildirim temizleme, yardım mesajı ve fatura ara ödeme geçmişini doğrulayın. Test geçmeden `main` dalına birleştirmeyin.
+## Windows
+1. `.env.example` dosyasını `.env` olarak kopyalayın.
+2. `VITE_SUPABASE_URL` ve `VITE_SUPABASE_PUBLISHABLE_KEY` değerlerini girin.
+3. Supabase SQL Editor'de `SUPABASE_1_SEFER_FINAL_GUVENLI.sql` dosyasını bir kez çalıştırın. Bu dosya DROP/TRUNCATE içermez.
+4. `npm install`
+5. `npm run tauri:dev`
+6. EXE için `npm run tauri:build`
 
-**Test dürüstlüğü:** Kaynaklar statik olarak kontrol edildi. Bu ortamda bağımlılıklar yüklenemediği için Vite üretim derlemesi doğrulanamadı. Supabase/Posmist harici servisi canlı bağlantıda test edilmedi.
+Service-role anahtarını `.env` içine koymayın.
+
+## Önemli
+Supabase projesindeki mevcut veriler uygulama açılışında topluca silinmez veya güncellenmez. Yazma işlemleri yalnızca kullanıcı ilgili butona basıp kaydettiğinde gerçekleşir.
